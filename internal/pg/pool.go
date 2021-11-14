@@ -28,11 +28,13 @@ type Pool struct {
 	*pgxpool.Pool
 }
 
-func NewPool(connString string, logger *zap.Logger) (*Pool, error) {
+func NewPool(connString string, logger *zap.Logger, lazy bool) (*Pool, error) {
 	config, err := pgxpool.ParseConfig(connString)
 	if err != nil {
 		return nil, fmt.Errorf("pg.NewPool: %w", err)
 	}
+
+	config.LazyConnect = lazy
 
 	// That only affects text protocol; pgx mostly uses a binary one.
 	// See:
@@ -50,12 +52,67 @@ func NewPool(connString string, logger *zap.Logger) (*Pool, error) {
 		config.ConnConfig.Logger = zapadapter.NewLogger(logger.Named("pgconn.Pool"))
 	}
 
-	p, err := pgxpool.ConnectConfig(context.Background(), config)
+	ctx := context.Background()
+
+	p, err := pgxpool.ConnectConfig(ctx, config)
 	if err != nil {
 		return nil, fmt.Errorf("pg.NewPool: %w", err)
 	}
 
-	return &Pool{
+	res := &Pool{
 		Pool: p,
-	}, nil
+	}
+
+	if !lazy {
+		err = res.checkConnection(ctx)
+	}
+
+	return res, err
+}
+
+func (p *Pool) checkConnection(ctx context.Context) error {
+	rows, err := p.Query(ctx, "SHOW ALL")
+	if err != nil {
+		return fmt.Errorf("pg.Pool.checkConnection: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var name, setting, description string
+		if err := rows.Scan(&name, &setting, &description); err != nil {
+			return fmt.Errorf("pg.Pool.checkConnection: %w", err)
+		}
+
+		switch name {
+		case "server_encoding":
+			if setting != "UTF8" {
+				return fmt.Errorf("pg.Pool.checkConnection: %q is %q, want %q", name, setting, "UTF8")
+			}
+		case "client_encoding":
+			if setting != "UTF8" {
+				return fmt.Errorf("pg.Pool.checkConnection: %q is %q, want %q", name, setting, "UTF8")
+			}
+		case "lc_collate":
+			if setting != "C" && setting != "POSIX" && setting != "en_US.utf8" {
+				return fmt.Errorf("pg.Pool.checkConnection: %q is %q", name, setting)
+			}
+		case "lc_ctype":
+			if setting != "C" && setting != "POSIX" && setting != "en_US.utf8" {
+				return fmt.Errorf("pg.Pool.checkConnection: %q is %q", name, setting)
+			}
+		default:
+			continue
+		}
+
+		p.Config().ConnConfig.Logger.Log(ctx, pgx.LogLevelDebug, "PostgreSQL setting", map[string]interface{}{
+			"name":    name,
+			"setting": setting,
+		})
+	}
+
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("pg.Pool.checkConnection: %w", err)
+	}
+
+	return nil
 }

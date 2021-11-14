@@ -19,7 +19,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"runtime/debug"
 
 	"github.com/pmezard/go-difflib/difflib"
 	"go.uber.org/zap"
@@ -44,18 +43,18 @@ const (
 var AllModes = []Mode{normalMode, proxyMode, diffMode}
 
 type conn struct {
-	tcpConn *net.TCPConn
+	netConn net.Conn
 	mode    Mode
 	h       *handlers.Handler
 	s       *shadow.Handler
 	l       *zap.SugaredLogger
 }
 
-func newConn(tcpConn *net.TCPConn, pgPool *pg.Pool, shadowAddr string, mode Mode) (*conn, error) {
-	prefix := fmt.Sprintf("// %s -> %s ", tcpConn.RemoteAddr(), tcpConn.LocalAddr())
+func newConn(netConn net.Conn, pgPool *pg.Pool, shadowAddr string, mode Mode) (*conn, error) {
+	prefix := fmt.Sprintf("// %s -> %s ", netConn.RemoteAddr(), netConn.LocalAddr())
 	l := zap.L().Named(prefix)
 
-	peerAddr := tcpConn.RemoteAddr().String()
+	peerAddr := netConn.RemoteAddr().String()
 	shared := shared.NewHandler(pgPool, peerAddr)
 	sqlH := sql.NewStorage(pgPool, l.Sugar())
 	jsonb1H := jsonb1.NewStorage(pgPool, l)
@@ -69,7 +68,7 @@ func newConn(tcpConn *net.TCPConn, pgPool *pg.Pool, shadowAddr string, mode Mode
 	}
 
 	return &conn{
-		tcpConn: tcpConn,
+		netConn: netConn,
 		mode:    mode,
 		h:       handlers.New(pgPool, l, shared, sqlH, jsonb1H),
 		s:       s,
@@ -80,12 +79,14 @@ func newConn(tcpConn *net.TCPConn, pgPool *pg.Pool, shadowAddr string, mode Mode
 func (c *conn) run(ctx context.Context) (err error) {
 	defer func() {
 		if p := recover(); p != nil {
-			err = fmt.Errorf("recovered from panic (err = %v)\n%v\n%s", err, p, debug.Stack())
+			// Log human-readable stack trace there (included in the error level automatically).
+			c.l.Errorf("panic:\n%v\n(err = %v)", p, err)
+			err = fmt.Errorf("recovered from panic (err = %v): %v", err, p)
 		}
 	}()
 
-	bufr := bufio.NewReader(c.tcpConn)
-	bufw := bufio.NewWriter(c.tcpConn)
+	bufr := bufio.NewReader(c.netConn)
+	bufw := bufio.NewWriter(c.netConn)
 	defer func() {
 		e := bufw.Flush()
 		if err == nil {
@@ -155,11 +156,6 @@ func (c *conn) run(ctx context.Context) (err error) {
 			}
 
 			c.l.Infof("Diff:\n%s\n\n\n", s)
-		}
-
-		if resHeader == nil {
-			resHeader = shadowHeader
-			resBody = shadowBody
 		}
 
 		if resHeader == nil {

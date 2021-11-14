@@ -28,17 +28,17 @@ import (
 )
 
 func (h *Handler) MsgGetLog(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, error) {
-	if len(msg.Documents) != 1 {
-		return nil, common.NewError(common.ErrNotImplemented, fmt.Errorf("multiple documents are not supported"))
+	document, err := msg.Document()
+	if err != nil {
+		return nil, common.NewError(common.ErrInternalError, err)
 	}
-	document := msg.Documents[0]
 
 	if l := document.Map()["getLog"]; l != "startupWarnings" {
 		return nil, common.NewError(common.ErrNotImplemented, fmt.Errorf("unhandled getLog value %q", l))
 	}
 
 	var pv string
-	err := h.pgPool.QueryRow(ctx, "SHOW server_version").Scan(&pv)
+	err = h.pgPool.QueryRow(ctx, "SHOW server_version").Scan(&pv)
 	if err != nil {
 		return nil, err
 	}
@@ -46,27 +46,39 @@ func (h *Handler) MsgGetLog(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, 
 	pv = strings.Split(pv, " ")[0]
 	mv := version.Get()
 
-	b, err := json.Marshal(map[string]interface{}{
-		"msg":  "Powered by 🥭 MangoDB " + mv.Version + " and PostgreSQL " + pv + ".",
-		"tags": []string{"startupWarnings"},
-		"s":    "I",
-		"c":    "STORAGE",
-		"id":   42000,
-		"ctx":  "initandlisten",
-		"t": map[string]string{
-			"$date": time.Now().UTC().Format("2006-01-02T15:04:05.999Z07:00"),
-		},
-	})
-	if err != nil {
-		return nil, err
+	var log types.Array
+	for _, line := range []string{
+		"Powered by 🥭 MangoDB " + mv.Version + " and PostgreSQL " + pv + ".",
+		"Please star us on GitHub: https://github.com/MangoDB-io/MangoDB",
+	} {
+		b, err := json.Marshal(map[string]interface{}{
+			"msg":  line,
+			"tags": []string{"startupWarnings"},
+			"s":    "I",
+			"c":    "STORAGE",
+			"id":   42000,
+			"ctx":  "initandlisten",
+			"t": map[string]string{
+				"$date": time.Now().UTC().Format("2006-01-02T15:04:05.999Z07:00"),
+			},
+		})
+		if err != nil {
+			return nil, err
+		}
+		log = append(log, string(b))
 	}
 
-	reply := &wire.OpMsg{
+	var reply wire.OpMsg
+	err = reply.SetSections(wire.OpMsgSection{
 		Documents: []types.Document{types.MustMakeDocument(
-			"totalLinesWritten", int32(1),
-			"log", types.Array{string(b)},
+			"totalLinesWritten", int32(len(log)),
+			"log", log,
 			"ok", float64(1),
 		)},
+	})
+	if err != nil {
+		return nil, common.NewError(common.ErrInternalError, err)
 	}
-	return reply, nil
+
+	return &reply, nil
 }

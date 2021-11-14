@@ -11,7 +11,7 @@ env-up: env-up-detach env-setup        ## Start development environment
 env-up-detach:
 	docker-compose up --always-recreate-deps --force-recreate --remove-orphans --renew-anon-volumes --detach
 
-env-setup:
+env-setup: gen-version
 	until [ "`docker inspect mangodb_postgres -f {{.State.Health.Status}}`" = "healthy" ]; do sleep 1; done
 	until [ "`docker inspect mangodb_mongodb  -f {{.State.Health.Status}}`" = "healthy" ]; do sleep 1; done
 	go run ./tools/envtool/main.go
@@ -26,15 +26,23 @@ init:                                  ## Install development tools
 	go mod tidy
 	cd tools && go mod tidy && go generate -tags=tools -x
 
-gen: bin/gofumports                    ## Generate code
+gen: bin/gofumpt                       ## Generate code
 	go generate -x ./...
 	$(MAKE) fmt
 
-fmt: bin/gofumports                    ## Format code
-	bin/gofumports -w -local=github.com/MangoDB-io/MangoDB .
+gen-version:
+	go generate -x ./internal/util/version
+
+fmt: bin/gofumpt                       ## Format code
+	bin/gofumpt -w .
 
 test:                                  ## Run tests
 	go test -race -coverprofile=cover.txt -coverpkg=./... -shuffle=on ./...
+
+# That's not quite correct: https://github.com/golang/go/issues/15513
+# But good enough for us.
+fuzz-prepare: gen-version
+	go test -count=0 ./...
 
 fuzz-short:                            ## Fuzz for 1 minute
 	go test -list='Fuzz.*' ./...
@@ -51,7 +59,7 @@ bench-short:                           ## Benchmark for 5 seconds
 	go test -bench=BenchmarkArray -benchtime=5s ./internal/bson/
 	go test -bench=BenchmarkDocument -benchtime=5s ./internal/bson/
 
-build-testcover:                       ## Build bin/mangodb-testcover
+build-testcover: gen-version           ## Build bin/mangodb-testcover
 	go test -c -o=bin/mangodb-testcover -trimpath -tags=testcover -race -coverpkg=./... ./cmd/mangodb
 
 run: build-testcover                   ## Run MangoDB
@@ -73,7 +81,7 @@ mongo:                                 ## Run (legacy) mongo shell
 	docker-compose exec mongodb mongo mongodb://host.docker.internal:27017/monila \
 		--verbose
 
-docker: build-testcover
+docker: build-testcover gen-version
 	env GOOS=linux go test -c -o=bin/mangodb -trimpath -tags=testcover -coverpkg=./... ./cmd/mangodb
 	docker build --tag=ghcr.io/mangodb-io/mangodb:latest .
 

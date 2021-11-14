@@ -12,13 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package sql
+package jsonb1
 
 import (
 	"strings"
 
-	"github.com/jackc/pgx/v4"
-
+	"github.com/MangoDB-io/MangoDB/internal/bson"
 	"github.com/MangoDB-io/MangoDB/internal/handlers/common"
 	"github.com/MangoDB-io/MangoDB/internal/pg"
 	"github.com/MangoDB-io/MangoDB/internal/types"
@@ -26,8 +25,27 @@ import (
 )
 
 func scalar(v interface{}, p *pg.Placeholder) (sql string, args []interface{}, err error) {
-	sql = p.Next()
-	args = []interface{}{v}
+	var arg interface{}
+	switch v := v.(type) {
+	case int32:
+		sql = "to_jsonb(" + p.Next() + "::int4)"
+		arg = v
+	case string:
+		sql = "to_jsonb(" + p.Next() + "::text)"
+		arg = v
+	case types.ObjectID:
+		sql = p.Next()
+		var b []byte
+		if b, err = bson.ObjectID(v).MarshalJSON(); err != nil {
+			err = lazyerrors.Errorf("scalar: %w", err)
+			return
+		}
+		arg = string(b)
+	default:
+		err = lazyerrors.Errorf("scalar: unhandled field %v (%T)", v, v)
+	}
+
+	args = []interface{}{arg}
 	return
 }
 
@@ -67,7 +85,8 @@ func fieldExpr(field string, expr types.Document, p *pg.Placeholder) (sql string
 		if sql != "" {
 			sql += " "
 		}
-		sql += pgx.Identifier{field}.Sanitize()
+		sql += "_jsonb->" + p.Next()
+		args = append(args, field)
 
 		switch op {
 		case "$in":
@@ -133,8 +152,14 @@ func wherePair(key string, value interface{}, p *pg.Placeholder) (sql string, ar
 
 	default:
 		// {field: value}
-		sql, args, err = scalar(value, p)
-		sql = pgx.Identifier{key}.Sanitize() + " = " + sql
+		sql = "_jsonb->" + p.Next() + " = "
+		args = append(args, key)
+
+		var scalarSQL string
+		var scalarArgs []interface{}
+		scalarSQL, scalarArgs, err = scalar(value, p)
+		sql += scalarSQL
+		args = append(args, scalarArgs...)
 	}
 
 	if err != nil {
@@ -150,7 +175,7 @@ func where(filter types.Document, p *pg.Placeholder) (sql string, args []interfa
 		return
 	}
 
-	sql += " WHERE"
+	sql = " WHERE"
 
 	for i, key := range filter.Keys() {
 		value := filterMap[key]

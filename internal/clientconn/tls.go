@@ -12,47 +12,34 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package version
+package clientconn
 
 import (
-	_ "embed"
-	"runtime/debug"
-	"strconv"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"math/big"
 )
 
-//go:generate ./version.sh
-
-//go:embed version.txt
-var version string
-
-type Info struct {
-	Version string
-	Commit  string
-	Dirty   bool
-}
-
-var info *Info
-
-func Get() *Info {
-	return info
-}
-
-func init() {
-	info = &Info{
-		Version: version,
+func generateInsecureCert() (*tls.Certificate, error) {
+	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, err
 	}
 
-	buildInfo, ok := debug.ReadBuildInfo()
-	if !ok {
-		return
+	template := x509.Certificate{
+		SerialNumber: big.NewInt(1),
 	}
 
-	for _, s := range buildInfo.Settings {
-		switch s.Key {
-		case "gitrevision":
-			info.Commit = s.Value
-		case "gituncommitted":
-			info.Dirty, _ = strconv.ParseBool(s.Value)
-		}
+	der, err := x509.CreateCertificate(rand.Reader, &template, &template, &privateKey.PublicKey, privateKey)
+	if err != nil {
+		return nil, err
 	}
+	cert := &tls.Certificate{
+		Certificate: [][]byte{der},
+		PrivateKey:  privateKey,
+	}
+	return cert, nil
 }
