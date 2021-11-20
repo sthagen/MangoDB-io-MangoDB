@@ -61,15 +61,13 @@ func (d Double) MarshalBinary() ([]byte, error) {
 }
 
 type doubleJSON struct {
-	F float64 `json:"$f,string"`
+	F interface{} `json:"$f"`
 }
 
 func (d *Double) UnmarshalJSON(data []byte) error {
 	if bytes.Equal(data, []byte("null")) {
 		panic("null data")
 	}
-
-	// TODO "Infinity", "-Infinity", "NaN"
 
 	r := bytes.NewReader(data)
 	dec := json.NewDecoder(r)
@@ -80,19 +78,45 @@ func (d *Double) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	if err := checkConsumed(dec, r); err != nil {
-		return lazyerrors.Errorf("bson.Double.UnmarshalJSON: %s", err)
+		return lazyerrors.Errorf("bson.Double.UnmarshalJSON: %w", err)
 	}
 
-	*d = Double(o.F)
+	switch f := o.F.(type) {
+	case float64:
+		*d = Double(f)
+	case string:
+		switch f {
+		case "Infinity":
+			*d = Double(math.Inf(1))
+		case "-Infinity":
+			*d = Double(math.Inf(-1))
+		case "NaN":
+			*d = Double(math.NaN())
+		default:
+			return lazyerrors.Errorf("bson.Double.UnmarshalJSON: unexpected string %q", f)
+		}
+	default:
+		return lazyerrors.Errorf("bson.Double.UnmarshalJSON: unexpected type %[1]T: %[1]v", f)
+	}
+
 	return nil
 }
 
 func (d Double) MarshalJSON() ([]byte, error) {
-	// TODO "Infinity", "-Infinity", "NaN"
+	f := float64(d)
+	var o doubleJSON
+	switch {
+	case math.IsInf(f, 1):
+		o.F = "Infinity"
+	case math.IsInf(f, -1):
+		o.F = "-Infinity"
+	case math.IsNaN(f):
+		o.F = "NaN"
+	default:
+		o.F = f
+	}
 
-	return json.Marshal(doubleJSON{
-		F: float64(d),
-	})
+	return json.Marshal(o)
 }
 
 // check interfaces
