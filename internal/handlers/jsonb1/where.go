@@ -1,4 +1,4 @@
-// Copyright 2021 Baltoro OÜ.
+// Copyright 2021 FerretDB Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,14 +15,13 @@
 package jsonb1
 
 import (
-	"fmt"
 	"strings"
 
-	"github.com/MangoDB-io/MangoDB/internal/bson"
-	"github.com/MangoDB-io/MangoDB/internal/handlers/common"
-	"github.com/MangoDB-io/MangoDB/internal/pg"
-	"github.com/MangoDB-io/MangoDB/internal/types"
-	"github.com/MangoDB-io/MangoDB/internal/util/lazyerrors"
+	"github.com/FerretDB/FerretDB/internal/bson"
+	"github.com/FerretDB/FerretDB/internal/handlers/common"
+	"github.com/FerretDB/FerretDB/internal/pg"
+	"github.com/FerretDB/FerretDB/internal/types"
+	"github.com/FerretDB/FerretDB/internal/util/lazyerrors"
 )
 
 func scalar(v interface{}, p *pg.Placeholder) (sql string, args []interface{}, err error) {
@@ -149,7 +148,7 @@ func fieldExpr(field string, expr types.Document, p *pg.Placeholder) (sql string
 			if opts, ok := filterMap["$options"]; ok {
 				// {field: {$regex: value, $options: string}}
 				if options, ok = opts.(string); !ok {
-					err = common.NewError(common.ErrBadValue, fmt.Errorf("$options has to be a string"))
+					err = common.NewErrorMessage(common.ErrBadValue, "$options has to be a string")
 					return
 				}
 			}
@@ -167,14 +166,14 @@ func fieldExpr(field string, expr types.Document, p *pg.Placeholder) (sql string
 				// {field: {$regex: /regex/}}
 				if options != "" {
 					if value.Options != "" {
-						err = common.NewError(common.ErrRegexOptions, fmt.Errorf("options set in both $regex and $options"))
+						err = common.NewErrorMessage(common.ErrRegexOptions, "options set in both $regex and $options")
 						return
 					}
 					value.Options = options
 				}
 				argSql, arg, err = scalar(value, p)
 			default:
-				err = common.NewError(common.ErrBadValue, fmt.Errorf("$regex has to be a string"))
+				err = common.NewErrorMessage(common.ErrBadValue, "$regex has to be a string")
 				return
 			}
 		default:

@@ -1,4 +1,4 @@
-// Copyright 2021 Baltoro OÜ.
+// Copyright 2021 FerretDB Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,13 +19,15 @@ import (
 	"bytes"
 	"encoding/json"
 
-	"github.com/MangoDB-io/MangoDB/internal/util/lazyerrors"
+	"github.com/FerretDB/FerretDB/internal/util/lazyerrors"
 )
 
+// CString represents BSON CString data type.
 type CString string
 
 func (cstr *CString) bsontype() {}
 
+// ReadFrom implements bsontype interface.
 func (cstr *CString) ReadFrom(r *bufio.Reader) error {
 	b, err := r.ReadBytes(0)
 	if err != nil {
@@ -36,6 +38,7 @@ func (cstr *CString) ReadFrom(r *bufio.Reader) error {
 	return nil
 }
 
+// WriteTo implements bsontype interface.
 func (cstr CString) WriteTo(w *bufio.Writer) error {
 	v, err := cstr.MarshalBinary()
 	if err != nil {
@@ -50,6 +53,7 @@ func (cstr CString) WriteTo(w *bufio.Writer) error {
 	return nil
 }
 
+// MarshalBinary implements bsontype interface.
 func (cstr CString) MarshalBinary() ([]byte, error) {
 	b := make([]byte, len(cstr)+1)
 	copy(b, cstr)
@@ -60,6 +64,7 @@ type cstringJSON struct {
 	CString string `json:"$c"`
 }
 
+// UnmarshalJSON implements bsontype interface.
 func (cstr *CString) UnmarshalJSON(data []byte) error {
 	if bytes.Equal(data, []byte("null")) {
 		panic("null data")
@@ -81,6 +86,7 @@ func (cstr *CString) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// MarshalJSON implements bsontype interface.
 func (cstr CString) MarshalJSON() ([]byte, error) {
 	return json.Marshal(cstringJSON{
 		CString: string(cstr),

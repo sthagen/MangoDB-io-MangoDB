@@ -1,4 +1,4 @@
-// Copyright 2021 Baltoro OÜ.
+// Copyright 2021 FerretDB Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,13 +20,15 @@ import (
 	"encoding/json"
 	"strconv"
 
-	"github.com/MangoDB-io/MangoDB/internal/util/lazyerrors"
+	"github.com/FerretDB/FerretDB/internal/util/lazyerrors"
 )
 
+// Array represents BSON Array data type.
 type Array []interface{}
 
 func (arr *Array) bsontype() {}
 
+// ReadFrom implements bsontype interface.
 func (arr *Array) ReadFrom(r *bufio.Reader) error {
 	var doc Document
 	if err := doc.ReadFrom(r); err != nil {
@@ -52,6 +54,7 @@ func (arr *Array) ReadFrom(r *bufio.Reader) error {
 	return nil
 }
 
+// WriteTo implements bsontype interface.
 func (arr Array) WriteTo(w *bufio.Writer) error {
 	v, err := arr.MarshalBinary()
 	if err != nil {
@@ -65,6 +68,7 @@ func (arr Array) WriteTo(w *bufio.Writer) error {
 	return nil
 }
 
+// MarshalBinary implements bsontype interface.
 func (arr Array) MarshalBinary() ([]byte, error) {
 	m := make(map[string]interface{}, len(arr))
 	keys := make([]string, len(arr))
@@ -85,6 +89,7 @@ func (arr Array) MarshalBinary() ([]byte, error) {
 	return b, nil
 }
 
+// UnmarshalJSON implements bsontype interface.
 func (arr *Array) UnmarshalJSON(data []byte) error {
 	if bytes.Equal(data, []byte("null")) {
 		panic("null data")
@@ -114,6 +119,7 @@ func (arr *Array) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// MarshalJSON implements bsontype interface.
 func (arr Array) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	buf.WriteByte('[')

@@ -1,4 +1,4 @@
-// Copyright 2021 Baltoro OÜ.
+// Copyright 2021 FerretDB Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,30 +17,31 @@ package shared
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"strings"
 	"time"
 
-	"github.com/MangoDB-io/MangoDB/internal/handlers/common"
-	"github.com/MangoDB-io/MangoDB/internal/types"
-	"github.com/MangoDB-io/MangoDB/internal/util/version"
-	"github.com/MangoDB-io/MangoDB/internal/wire"
+	"github.com/FerretDB/FerretDB/internal/handlers/common"
+	"github.com/FerretDB/FerretDB/internal/types"
+	"github.com/FerretDB/FerretDB/internal/util/lazyerrors"
+	"github.com/FerretDB/FerretDB/internal/util/version"
+	"github.com/FerretDB/FerretDB/internal/wire"
 )
 
+// MsgGetLog is an administrative command that returns the most recent 1024 logged events.
 func (h *Handler) MsgGetLog(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, error) {
 	document, err := msg.Document()
 	if err != nil {
-		return nil, common.NewError(common.ErrInternalError, err)
+		return nil, lazyerrors.Error(err)
 	}
 
 	if l := document.Map()["getLog"]; l != "startupWarnings" {
-		return nil, common.NewError(common.ErrNotImplemented, fmt.Errorf("unhandled getLog value %q", l))
+		return nil, common.NewErrorMessage(common.ErrNotImplemented, "MsgGetLog: unhandled getLog value %q", l)
 	}
 
 	var pv string
 	err = h.pgPool.QueryRow(ctx, "SHOW server_version").Scan(&pv)
 	if err != nil {
-		return nil, err
+		return nil, lazyerrors.Error(err)
 	}
 
 	pv = strings.Split(pv, " ")[0]
@@ -48,8 +49,8 @@ func (h *Handler) MsgGetLog(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, 
 
 	var log types.Array
 	for _, line := range []string{
-		"Powered by 🥭 MangoDB " + mv.Version + " and PostgreSQL " + pv + ".",
-		"Please star us on GitHub: https://github.com/MangoDB-io/MangoDB",
+		"Powered by 🥭 FerretDB " + mv.Version + " and PostgreSQL " + pv + ".",
+		"Please star us on GitHub: https://github.com/FerretDB/FerretDB",
 	} {
 		b, err := json.Marshal(map[string]interface{}{
 			"msg":  line,
@@ -63,7 +64,7 @@ func (h *Handler) MsgGetLog(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, 
 			},
 		})
 		if err != nil {
-			return nil, err
+			return nil, lazyerrors.Error(err)
 		}
 		log = append(log, string(b))
 	}
@@ -77,7 +78,7 @@ func (h *Handler) MsgGetLog(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, 
 		)},
 	})
 	if err != nil {
-		return nil, common.NewError(common.ErrInternalError, err)
+		return nil, lazyerrors.Error(err)
 	}
 
 	return &reply, nil

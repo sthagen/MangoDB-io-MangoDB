@@ -1,4 +1,4 @@
-// Copyright 2021 Baltoro OÜ.
+// Copyright 2021 FerretDB Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,16 +20,18 @@ import (
 
 	"github.com/jackc/pgx/v4"
 
-	"github.com/MangoDB-io/MangoDB/internal/handlers/common"
-	"github.com/MangoDB-io/MangoDB/internal/pg"
-	"github.com/MangoDB-io/MangoDB/internal/types"
-	"github.com/MangoDB-io/MangoDB/internal/wire"
+	"github.com/FerretDB/FerretDB/internal/handlers/common"
+	"github.com/FerretDB/FerretDB/internal/pg"
+	"github.com/FerretDB/FerretDB/internal/types"
+	"github.com/FerretDB/FerretDB/internal/util/lazyerrors"
+	"github.com/FerretDB/FerretDB/internal/wire"
 )
 
+// MsgDelete deletes document.
 func (h *storage) MsgDelete(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, error) {
 	document, err := msg.Document()
 	if err != nil {
-		return nil, common.NewError(common.ErrInternalError, err)
+		return nil, lazyerrors.Error(err)
 	}
 
 	m := document.Map()
@@ -46,22 +48,21 @@ func (h *storage) MsgDelete(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, 
 
 		elSQL, args, err := where(d["q"].(types.Document), &placeholder)
 		if err != nil {
-			return nil, common.NewError(common.ErrNotImplemented, err)
+			return nil, lazyerrors.Error(err)
 		}
 
-		// TODO
+		// TODO https://github.com/FerretDB/FerretDB/issues/82
 		limit, _ := d["limit"].(int32)
-		_ = limit
-		// if limit != 0 {
-		// 	return nil, common.NewError(common.ErrNotImplemented, fmt.Errorf("limit for delete is not supported"), header, msg)
-		// }
+		if limit != 0 {
+			return nil, common.NewErrorMessage(common.ErrNotImplemented, "MsgDelete: limit for delete is not supported")
+		}
 
 		sql += elSQL
 
 		tag, err := h.pgPool.Exec(ctx, sql, args...)
 		if err != nil {
 			// TODO check error code
-			return nil, common.NewError(common.ErrNamespaceNotFound, fmt.Errorf("ns not found"))
+			return nil, common.NewErrorMessage(common.ErrNamespaceNotFound, "MsgDelete: ns not found: %w", err)
 		}
 
 		deleted += int32(tag.RowsAffected())
@@ -75,7 +76,7 @@ func (h *storage) MsgDelete(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, 
 		)},
 	})
 	if err != nil {
-		return nil, common.NewError(common.ErrInternalError, err)
+		return nil, lazyerrors.Error(err)
 	}
 
 	return &reply, nil

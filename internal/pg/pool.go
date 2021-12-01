@@ -1,4 +1,4 @@
-// Copyright 2021 Baltoro OÜ.
+// Copyright 2021 FerretDB Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -24,10 +24,12 @@ import (
 	"go.uber.org/zap"
 )
 
+// Pool data struct for *pgxpool.Pool.
 type Pool struct {
 	*pgxpool.Pool
 }
 
+// NewPool returns a pfxpool, a concurrency-safe connection pool for pgx.
 func NewPool(connString string, logger *zap.Logger, lazy bool) (*Pool, error) {
 	config, err := pgxpool.ParseConfig(connString)
 	if err != nil {
@@ -41,10 +43,10 @@ func NewPool(connString string, logger *zap.Logger, lazy bool) (*Pool, error) {
 	// * https://github.com/jackc/pgx/issues/520
 	// * https://github.com/jackc/pgx/issues/789
 	// * https://github.com/jackc/pgx/issues/863
-	// * https://github.com/MangoDB-io/MangoDB/issues/43
+	// * https://github.com/FerretDB/FerretDB/issues/43
 	config.ConnConfig.RuntimeParams["timezone"] = "UTC"
 
-	config.ConnConfig.RuntimeParams["application_name"] = "MangoDB"
+	config.ConnConfig.RuntimeParams["application_name"] = "FerretDB"
 	config.ConnConfig.RuntimeParams["search_path"] = ""
 
 	if logger.Core().Enabled(zap.DebugLevel) {
@@ -71,6 +73,8 @@ func NewPool(connString string, logger *zap.Logger, lazy bool) (*Pool, error) {
 }
 
 func (p *Pool) checkConnection(ctx context.Context) error {
+	logger := p.Config().ConnConfig.Logger
+
 	rows, err := p.Query(ctx, "SHOW ALL")
 	if err != nil {
 		return fmt.Errorf("pg.Pool.checkConnection: %w", err)
@@ -104,10 +108,12 @@ func (p *Pool) checkConnection(ctx context.Context) error {
 			continue
 		}
 
-		p.Config().ConnConfig.Logger.Log(ctx, pgx.LogLevelDebug, "PostgreSQL setting", map[string]interface{}{
-			"name":    name,
-			"setting": setting,
-		})
+		if logger != nil {
+			logger.Log(ctx, pgx.LogLevelDebug, "PostgreSQL setting", map[string]interface{}{
+				"name":    name,
+				"setting": setting,
+			})
+		}
 	}
 
 	if err := rows.Err(); err != nil {

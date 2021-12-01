@@ -1,4 +1,4 @@
-// Copyright 2021 Baltoro OÜ.
+// Copyright 2021 FerretDB Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -25,14 +25,16 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/MangoDB-io/MangoDB/internal/pg"
-	"github.com/MangoDB-io/MangoDB/internal/util/lazyerrors"
+	"github.com/FerretDB/FerretDB/internal/pg"
+	"github.com/FerretDB/FerretDB/internal/util/lazyerrors"
 )
 
+// Listener main data object.
 type Listener struct {
 	opts *NewListenerOpts
 }
 
+// NewListenerOpts, configuration for a listener.
 type NewListenerOpts struct {
 	ListenAddr string
 	TLS        bool
@@ -44,12 +46,14 @@ type NewListenerOpts struct {
 	TestConnTimeout time.Duration
 }
 
+// NewListener returns a new listener, configured by the NewListenerOpts argument.
 func NewListener(opts *NewListenerOpts) *Listener {
 	return &Listener{
 		opts: opts,
 	}
 }
 
+// Run the listener, accepting connections.
 func (l *Listener) Run(ctx context.Context) error {
 	lis, err := net.Listen("tcp", l.opts.ListenAddr)
 	if err != nil {

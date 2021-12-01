@@ -1,4 +1,4 @@
-// Copyright 2021 Baltoro OÜ.
+// Copyright 2021 FerretDB Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,20 +16,22 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync/atomic"
 
 	"github.com/jackc/pgx/v4"
 	"go.uber.org/zap"
 
-	"github.com/MangoDB-io/MangoDB/internal/handlers/common"
-	"github.com/MangoDB-io/MangoDB/internal/handlers/shared"
-	"github.com/MangoDB-io/MangoDB/internal/pg"
-	"github.com/MangoDB-io/MangoDB/internal/types"
-	"github.com/MangoDB-io/MangoDB/internal/util/lazyerrors"
-	"github.com/MangoDB-io/MangoDB/internal/wire"
+	"github.com/FerretDB/FerretDB/internal/handlers/common"
+	"github.com/FerretDB/FerretDB/internal/handlers/shared"
+	"github.com/FerretDB/FerretDB/internal/pg"
+	"github.com/FerretDB/FerretDB/internal/types"
+	"github.com/FerretDB/FerretDB/internal/util/lazyerrors"
+	"github.com/FerretDB/FerretDB/internal/wire"
 )
 
+// Handler data struct.
 type Handler struct {
 	pgPool *pg.Pool
 	l      *zap.Logger
@@ -40,6 +42,7 @@ type Handler struct {
 	lastRequestID int32
 }
 
+// New returns a new handler.
 func New(pgPool *pg.Pool, l *zap.Logger, shared *shared.Handler, sql, jsonb1 common.Storage) *Handler {
 	return &Handler{
 		pgPool: pgPool,
@@ -50,18 +53,26 @@ func New(pgPool *pg.Pool, l *zap.Logger, shared *shared.Handler, sql, jsonb1 com
 	}
 }
 
-func (h *Handler) Handle(ctx context.Context, header *wire.MsgHeader, msg wire.MsgBody) (*wire.MsgHeader, wire.MsgBody, error) {
-	resHeader := new(wire.MsgHeader)
-	var resMsg wire.MsgBody
+// Handle handles the message.
+//
+// Message handlers should:
+//  * return normal response body;
+//  * return protocol error (*common.Error) - it will be returned to the client;
+//  * return any other error - it will be returned to the client before terminating connection;
+//  * panic - that will terminate the connection without a response.
+//
+//nolint:lll // arguments are long
+func (h *Handler) Handle(ctx context.Context, reqHeader *wire.MsgHeader, reqBody wire.MsgBody) (resHeader *wire.MsgHeader, resBody wire.MsgBody, closeConn bool) {
+	resHeader = new(wire.MsgHeader)
 	var err error
 
-	switch header.OpCode {
+	switch reqHeader.OpCode {
 	case wire.OP_MSG:
 		resHeader.OpCode = wire.OP_MSG
-		resMsg, err = h.handleOpMsg(ctx, msg.(*wire.OpMsg))
+		resBody, err = h.handleOpMsg(ctx, reqBody.(*wire.OpMsg))
 	case wire.OP_QUERY:
 		resHeader.OpCode = wire.OP_REPLY
-		resMsg, err = h.handleOpQuery(ctx, msg.(*wire.OpQuery))
+		resBody, err = h.handleOpQuery(ctx, reqBody.(*wire.OpQuery))
 	case wire.OP_REPLY:
 		fallthrough
 	case wire.OP_UPDATE:
@@ -79,33 +90,33 @@ func (h *Handler) Handle(ctx context.Context, header *wire.MsgHeader, msg wire.M
 	case wire.OP_COMPRESSED:
 		fallthrough
 	default:
-		panic(fmt.Sprintf("unexpected OpCode %s", header.OpCode))
+		panic(fmt.Sprintf("unexpected OpCode %s", reqHeader.OpCode))
 	}
 
 	if err != nil {
-		e, ok := err.(common.Error)
-		if !ok {
-			return nil, nil, err
+		if resHeader.OpCode != wire.OP_MSG {
+			panic(err)
 		}
 
-		// FIXME use correct type for OP_QUERY
+		protoErr, recoverable := common.ProtocolError(err)
+		closeConn = !recoverable
 		var res wire.OpMsg
-		err := res.SetSections(wire.OpMsgSection{
-			Documents: []types.Document{e.Document()},
+		err = res.SetSections(wire.OpMsgSection{
+			Documents: []types.Document{protoErr.Document()},
 		})
 		if err != nil {
-			return nil, nil, err
+			panic(err)
 		}
-		resMsg = &res
+		resBody = &res
 	}
 
-	resHeader.ResponseTo = header.RequestID
+	resHeader.ResponseTo = reqHeader.RequestID
 
 	// FIXME don't call MarshalBinary there
 	// Fix header in the caller?
-	b, err := resMsg.MarshalBinary()
+	b, err := resBody.MarshalBinary()
 	if err != nil {
-		return nil, nil, err
+		panic(err)
 	}
 	resHeader.MessageLength = int32(wire.MsgHeaderLen + len(b))
 
@@ -114,14 +125,14 @@ func (h *Handler) Handle(ctx context.Context, header *wire.MsgHeader, msg wire.M
 	}
 	resHeader.RequestID = atomic.AddInt32(&h.lastRequestID, 1)
 
-	return resHeader, resMsg, nil
+	return
 }
 
 //nolint:goconst // good enough
 func (h *Handler) handleOpMsg(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, error) {
 	document, err := msg.Document()
 	if err != nil {
-		return nil, common.NewError(common.ErrInternalError, err)
+		return nil, lazyerrors.Error(err)
 	}
 
 	cmd := document.Command()
@@ -149,7 +160,7 @@ func (h *Handler) handleOpMsg(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg
 	case "delete", "find", "insert", "update":
 		storage, err := h.msgStorage(ctx, msg)
 		if err != nil {
-			return nil, common.NewError(common.ErrInternalError, err)
+			return nil, lazyerrors.Error(err)
 		}
 
 		switch cmd {
@@ -165,8 +176,13 @@ func (h *Handler) handleOpMsg(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg
 			panic("not reached")
 		}
 
+	case "debug_panic":
+		panic("debug_panic")
+	case "debug_error":
+		return nil, errors.New("debug_error")
+
 	default:
-		return nil, common.NewError(common.ErrNotImplemented, fmt.Errorf("unhandled msg %q", cmd))
+		return nil, common.NewErrorMessage(common.ErrCommandNotFound, "no such command: '%s'", cmd)
 	}
 }
 
@@ -175,13 +191,13 @@ func (h *Handler) handleOpQuery(ctx context.Context, msg *wire.OpQuery) (*wire.O
 		return h.shared.QueryCmd(ctx, msg)
 	}
 
-	return nil, common.NewError(common.ErrNotImplemented, fmt.Errorf("unhandled collection %q", msg.FullCollectionName))
+	return nil, common.NewErrorMessage(common.ErrNotImplemented, "handleOpQuery: unhandled collection %q", msg.FullCollectionName)
 }
 
 func (h *Handler) msgStorage(ctx context.Context, msg *wire.OpMsg) (common.Storage, error) {
 	document, err := msg.Document()
 	if err != nil {
-		return nil, lazyerrors.Errorf("Handler.msgStorage: %w", err)
+		return nil, fmt.Errorf("Handler.msgStorage: %w", err)
 	}
 
 	m := document.Map()
