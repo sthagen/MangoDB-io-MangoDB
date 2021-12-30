@@ -35,13 +35,13 @@ const (
 
 // Common interface with types.Document.
 type document interface {
-	Map() map[string]interface{}
+	Map() map[string]any
 	Keys() []string
 }
 
 // Document represents BSON Document data type.
 type Document struct {
-	m    map[string]interface{}
+	m    map[string]any
 	keys []string
 }
 
@@ -54,7 +54,7 @@ func ConvertDocument(d document) (*Document, error) {
 	}
 
 	if doc.m == nil {
-		doc.m = map[string]interface{}{}
+		doc.m = map[string]any{}
 	}
 	if doc.keys == nil {
 		doc.keys = []string{}
@@ -80,7 +80,7 @@ func MustConvertDocument(d document) *Document {
 func (doc *Document) bsontype() {}
 
 // Returns the map of key values associated with the Document.
-func (doc *Document) Map() map[string]interface{} {
+func (doc *Document) Map() map[string]any {
 	return doc.m
 }
 
@@ -111,7 +111,7 @@ func (doc *Document) ReadFrom(r *bufio.Reader) error {
 	}
 
 	bufr := bufio.NewReader(bytes.NewReader(b[4:]))
-	doc.m = make(map[string]interface{})
+	doc.m = map[string]any{}
 	doc.keys = make([]string, 0, 2)
 
 	for {
@@ -136,20 +136,6 @@ func (doc *Document) ReadFrom(r *bufio.Reader) error {
 		doc.keys = append(doc.keys, string(ename))
 
 		switch tag(t) {
-		case tagDouble:
-			var v Double
-			if err := v.ReadFrom(bufr); err != nil {
-				return lazyerrors.Errorf("bson.Document.ReadFrom (Double): %w", err)
-			}
-			doc.m[string(ename)] = float64(v)
-
-		case tagString:
-			var v String
-			if err := v.ReadFrom(bufr); err != nil {
-				return lazyerrors.Errorf("bson.Document.ReadFrom (String): %w", err)
-			}
-			doc.m[string(ename)] = string(v)
-
 		case tagDocument:
 			// TODO check maximum nesting
 
@@ -169,7 +155,22 @@ func (doc *Document) ReadFrom(r *bufio.Reader) error {
 			if err := v.ReadFrom(bufr); err != nil {
 				return lazyerrors.Errorf("bson.Document.ReadFrom (Array): %w", err)
 			}
-			doc.m[string(ename)] = types.Array(v)
+			a := types.Array(v)
+			doc.m[string(ename)] = &a
+
+		case tagDouble:
+			var v Double
+			if err := v.ReadFrom(bufr); err != nil {
+				return lazyerrors.Errorf("bson.Document.ReadFrom (Double): %w", err)
+			}
+			doc.m[string(ename)] = float64(v)
+
+		case tagString:
+			var v String
+			if err := v.ReadFrom(bufr); err != nil {
+				return lazyerrors.Errorf("bson.Document.ReadFrom (String): %w", err)
+			}
+			doc.m[string(ename)] = string(v)
 
 		case tagBinary:
 			var v Binary
@@ -275,6 +276,28 @@ func (doc Document) MarshalBinary() ([]byte, error) {
 		}
 
 		switch elV := elV.(type) {
+		case types.Document:
+			bufw.WriteByte(byte(tagDocument))
+			if err := ename.WriteTo(bufw); err != nil {
+				return nil, lazyerrors.Error(err)
+			}
+			doc, err := ConvertDocument(elV)
+			if err != nil {
+				return nil, lazyerrors.Error(err)
+			}
+			if err := doc.WriteTo(bufw); err != nil {
+				return nil, lazyerrors.Error(err)
+			}
+
+		case *types.Array:
+			bufw.WriteByte(byte(tagArray))
+			if err := ename.WriteTo(bufw); err != nil {
+				return nil, lazyerrors.Error(err)
+			}
+			if err := Array(*elV).WriteTo(bufw); err != nil {
+				return nil, lazyerrors.Error(err)
+			}
+
 		case float64:
 			bufw.WriteByte(byte(tagDouble))
 			if err := ename.WriteTo(bufw); err != nil {
@@ -290,28 +313,6 @@ func (doc Document) MarshalBinary() ([]byte, error) {
 				return nil, lazyerrors.Error(err)
 			}
 			if err := String(elV).WriteTo(bufw); err != nil {
-				return nil, lazyerrors.Error(err)
-			}
-
-		case types.Document:
-			bufw.WriteByte(byte(tagDocument))
-			if err := ename.WriteTo(bufw); err != nil {
-				return nil, lazyerrors.Error(err)
-			}
-			doc, err := ConvertDocument(elV)
-			if err != nil {
-				return nil, lazyerrors.Error(err)
-			}
-			if err := doc.WriteTo(bufw); err != nil {
-				return nil, lazyerrors.Error(err)
-			}
-
-		case types.Array:
-			bufw.WriteByte(byte(tagArray))
-			if err := ename.WriteTo(bufw); err != nil {
-				return nil, lazyerrors.Error(err)
-			}
-			if err := Array(elV).WriteTo(bufw); err != nil {
 				return nil, lazyerrors.Error(err)
 			}
 
@@ -415,8 +416,8 @@ func (doc Document) MarshalBinary() ([]byte, error) {
 	return res.Bytes(), nil
 }
 
-func unmarshalJSONValue(data []byte) (interface{}, error) {
-	var v interface{}
+func unmarshalJSONValue(data []byte) (any, error) {
+	var v any
 	r := bytes.NewReader(data)
 	dec := json.NewDecoder(r)
 	err := dec.Decode(&v)
@@ -427,9 +428,9 @@ func unmarshalJSONValue(data []byte) (interface{}, error) {
 		return nil, lazyerrors.Error(err)
 	}
 
-	var res interface{}
+	var res any
 	switch v := v.(type) {
-	case map[string]interface{}:
+	case map[string]any:
 		switch {
 		case v["$f"] != nil:
 			var o Double
@@ -470,10 +471,11 @@ func unmarshalJSONValue(data []byte) (interface{}, error) {
 		}
 	case string:
 		res = v
-	case []interface{}:
+	case []any:
 		var o Array
 		err = o.UnmarshalJSON(data)
-		res = types.Array(o)
+		a := types.Array(o)
+		res = &a
 	case bool:
 		res = v
 	case nil:
@@ -522,7 +524,7 @@ func (doc *Document) UnmarshalJSON(data []byte) error {
 	}
 
 	doc.keys = keys
-	doc.m = make(map[string]interface{}, len(keys))
+	doc.m = make(map[string]any, len(keys))
 
 	for _, key := range keys {
 		b, ok = rawMessages[key]
@@ -543,18 +545,18 @@ func (doc *Document) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func marshalJSONValue(v interface{}) ([]byte, error) {
+func marshalJSONValue(v any) ([]byte, error) {
 	var o json.Marshaler
 	var err error
 	switch v := v.(type) {
+	case types.Document:
+		o, err = ConvertDocument(v)
+	case *types.Array:
+		o = Array(*v)
 	case float64:
 		o = Double(v)
 	case string:
 		o = String(v)
-	case types.Document:
-		o, err = ConvertDocument(v)
-	case types.Array:
-		o = Array(v)
 	case types.Binary:
 		o = Binary(v)
 	case types.ObjectID:

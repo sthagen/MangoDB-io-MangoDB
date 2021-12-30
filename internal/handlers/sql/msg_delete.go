@@ -37,10 +37,15 @@ func (h *storage) MsgDelete(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, 
 	m := document.Map()
 	collection := m[document.Command()].(string)
 	db := m["$db"].(string)
-	docs, _ := m["deletes"].(types.Array)
+	docs, _ := m["deletes"].(*types.Array)
 
 	var deleted int32
-	for _, doc := range docs {
+	for i := 0; i < docs.Len(); i++ {
+		doc, err := docs.Get(i)
+		if err != nil {
+			return nil, lazyerrors.Error(err)
+		}
+
 		d := doc.(types.Document).Map()
 
 		sql := fmt.Sprintf(`DELETE FROM %s`, pgx.Identifier{db, collection}.Sanitize())
@@ -51,13 +56,15 @@ func (h *storage) MsgDelete(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, 
 			return nil, lazyerrors.Error(err)
 		}
 
-		// TODO https://github.com/FerretDB/FerretDB/issues/82
 		limit, _ := d["limit"].(int32)
 		if limit != 0 {
-			return nil, common.NewErrorMessage(common.ErrNotImplemented, "MsgDelete: limit for delete is not supported")
+			sql += fmt.Sprintf(
+				"WHERE %s IN (SELECT %s FROM %s LIMIT 1)",
+				placeholder.Next(), placeholder.Next(), pgx.Identifier{db, collection}.Sanitize(),
+			)
+		} else {
+			sql += elSQL
 		}
-
-		sql += elSQL
 
 		tag, err := h.pgPool.Exec(ctx, sql, args...)
 		if err != nil {

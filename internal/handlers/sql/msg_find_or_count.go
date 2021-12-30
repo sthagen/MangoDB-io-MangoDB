@@ -27,8 +27,9 @@ import (
 	"github.com/FerretDB/FerretDB/internal/wire"
 )
 
-// MsgFind selects documents in a collection or view and returns a cursor to the selected documents.
-func (h *storage) MsgFind(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, error) {
+// MsgFindOrCount finds documents in a collection or view and returns a cursor to the selected documents
+// or count the number of documents that matches the query filter.
+func (h *storage) MsgFindOrCount(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, error) {
 	// TODO cursor / getMore support via https://www.postgresql.org/docs/current/sql-declare.html
 
 	document, err := msg.Document()
@@ -36,20 +37,29 @@ func (h *storage) MsgFind(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, er
 		return nil, lazyerrors.Error(err)
 	}
 
+	var filter types.Document
+	var sql, collection string
+
 	m := document.Map()
-	collection := m["find"].(string)
+	_, isFindOp := m["find"].(string)
 	db := m["$db"].(string)
 
 	projection, ok := m["projection"].(types.Document)
 	if ok && len(projection.Map()) != 0 {
 		return nil, common.NewErrorMessage(common.ErrNotImplemented, "MsgFind: projection is not supported")
 	}
-
-	filter, _ := m["filter"].(types.Document)
+	if isFindOp {
+		collection = m["find"].(string)
+		filter, _ = m["filter"].(types.Document)
+		sql = fmt.Sprintf(`SELECT * FROM %s`, pgx.Identifier{db, collection}.Sanitize())
+	} else {
+		collection = m["count"].(string)
+		filter, _ = m["query"].(types.Document)
+		sql = fmt.Sprintf(`SELECT COUNT(*) FROM %s`, pgx.Identifier{db, collection}.Sanitize())
+	}
 	sort, _ := m["sort"].(types.Document)
 	limit, _ := m["limit"].(int32)
 
-	sql := fmt.Sprintf(`SELECT * FROM %s`, pgx.Identifier{db, collection}.Sanitize())
 	var placeholder pg.Placeholder
 
 	whereSQL, args, err := where(filter, &placeholder)
@@ -60,7 +70,7 @@ func (h *storage) MsgFind(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, er
 	sql += whereSQL
 
 	sortMap := sort.Map()
-	if len(sortMap) > 0 {
+	if len(sortMap) != 0 {
 		sql += " ORDER BY"
 
 		for i, k := range sort.Keys() {
@@ -95,33 +105,58 @@ func (h *storage) MsgFind(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, er
 	}
 	defer rows.Close()
 
-	rowInfo := extractRowInfo(rows)
-
-	var docs types.Array
-
-	for {
-		doc, err := nextRow(rows, rowInfo)
-		if err != nil {
-			return nil, lazyerrors.Error(err)
-		}
-		if doc == nil {
-			break
-		}
-
-		docs = append(docs, *doc)
-	}
-
 	var res wire.OpMsg
-	err = res.SetSections(wire.OpMsgSection{
-		Documents: []types.Document{types.MustMakeDocument(
-			"cursor", types.MustMakeDocument(
-				"firstBatch", docs,
-				"id", int64(0), // TODO
-				"ns", db+"."+collection,
-			),
-			"ok", float64(1),
-		)},
-	})
+	if isFindOp { //nolint:nestif // FIXME: I have no idead to fix this lint
+		rowInfo := extractRowInfo(rows)
+
+		var docs types.Array
+
+		for {
+			doc, err := nextRow(rows, rowInfo)
+			if err != nil {
+				return nil, lazyerrors.Error(err)
+			}
+			if doc == nil {
+				break
+			}
+
+			if err = docs.Append(*doc); err != nil {
+				return nil, lazyerrors.Error(err)
+			}
+		}
+
+		err = res.SetSections(wire.OpMsgSection{
+			Documents: []types.Document{types.MustMakeDocument(
+				"cursor", types.MustMakeDocument(
+					"firstBatch", &docs,
+					"id", int64(0),
+					"ns", db+"."+collection,
+				),
+				"ok", float64(1),
+			)},
+		})
+	} else {
+		var count int32
+		for rows.Next() {
+			err := rows.Scan(&count)
+			if err != nil {
+				return nil, lazyerrors.Error(err)
+			}
+		}
+		// in psql, the SELECT * FROM table limit `x` ignores the value of the limit,
+		// so, we need this `if` statement to support this kind of query `db.actor.find().limit(10).count()`
+		if count > limit && limit != 0 {
+			count = limit
+		}
+		defer rows.Close()
+
+		err = res.SetSections(wire.OpMsgSection{
+			Documents: []types.Document{types.MustMakeDocument(
+				"n", count,
+				"ok", float64(1),
+			)},
+		})
+	}
 	if err != nil {
 		return nil, lazyerrors.Error(err)
 	}

@@ -12,19 +12,28 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package types
+package shared
 
-//go:generate ../../bin/stringer -linecomment -type BinarySubtype
+import (
+	"context"
 
-type BinarySubtype byte
-
-const (
-	BinaryGeneric    = BinarySubtype(0x00) // generic
-	BinaryFunction   = BinarySubtype(0x01) // function
-	BinaryGenericOld = BinarySubtype(0x02) // generic-old
-	BinaryUUIDOld    = BinarySubtype(0x03) // uuid-old
-	BinaryUUID       = BinarySubtype(0x04) // uuid
-	BinaryMD5        = BinarySubtype(0x05) // md5
-	BinaryEncrypted  = BinarySubtype(0x06) // encrypted
-	BinaryUser       = BinarySubtype(0x80) // user
+	"github.com/FerretDB/FerretDB/internal/types"
+	"github.com/FerretDB/FerretDB/internal/util/lazyerrors"
+	"github.com/FerretDB/FerretDB/internal/wire"
 )
+
+// MsgGetParameter OpMsg used to get parameter.
+func (h *Handler) MsgGetParameter(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, error) {
+	var reply wire.OpMsg
+	err := reply.SetSections(wire.OpMsgSection{
+		Documents: []types.Document{types.MustMakeDocument(
+			"version", versionValue,
+			"ok", float64(1),
+		)},
+	})
+	if err != nil {
+		return nil, lazyerrors.Error(err)
+	}
+
+	return &reply, nil
+}

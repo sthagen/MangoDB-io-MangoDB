@@ -24,14 +24,15 @@ import (
 	"github.com/FerretDB/FerretDB/internal/wire"
 )
 
-func (h *Handler) QueryCmd(ctx context.Context, msg *wire.OpQuery) (*wire.OpReply, error) {
-	switch cmd := msg.Query.Command(); cmd {
+func (h *Handler) QueryCmd(ctx context.Context, query *wire.OpQuery) (*wire.OpReply, error) {
+	switch cmd := query.Query.Command(); cmd {
 	case "ismaster":
-		// TODO merge with handleOpMsgIsMaster
+		// TODO merge with MsgHello
 		reply := &wire.OpReply{
 			NumberReturned: 1,
 			Documents: []types.Document{
 				types.MustMakeDocument(
+					"helloOk", true,
 					"ismaster", true,
 					// topologyVersion
 					"maxBsonObjectSize", int32(bson.MaxDocumentLen),

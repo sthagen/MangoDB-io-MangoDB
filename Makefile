@@ -22,7 +22,9 @@ env-down:                              ## Stop development environment
 
 init: gen-version                      ## Install development tools
 	go mod tidy
-	cd tools && go mod tidy && go generate -tags=tools -x
+	cd tools && go mod tidy
+	go mod verify
+	cd tools && go generate -tags=tools -x
 
 gen: bin/gofumpt                       ## Generate code
 	go generate -x ./...
@@ -63,28 +65,36 @@ build-testcover: gen-version           ## Build bin/ferretdb-testcover
 run: build-testcover                   ## Run FerretDB
 	bin/ferretdb-testcover -test.coverprofile=cover.txt -mode=diff-normal -listen-addr=:27017
 
-run-dance: build-testcover             ## Run FerretDB in testing mode
-	bin/ferretdb-testcover -test.coverprofile=cover.txt -mode=normal -test-conn-timeout=10s
-
 lint: bin/go-sumtype bin/golangci-lint ## Run linters
 	bin/go-sumtype ./...
 	bin/golangci-lint run --config=.golangci-required.yml
 	bin/golangci-lint run --config=.golangci.yml
+	bin/go-consistent -pedantic ./...
 
 psql:                                  ## Run psql
 	docker-compose exec postgres psql -U postgres -d ferretdb
 
 mongosh:                               ## Run mongosh
-	docker-compose exec mongodb mongosh mongodb://host.docker.internal:27017/monila \
+	docker-compose exec mongodb mongosh mongodb://host.docker.internal:27017/monila?heartbeatFrequencyMS=300000 \
 		--verbose --eval 'disableTelemetry()' --shell
 
 mongo:                                 ## Run (legacy) mongo shell
-	docker-compose exec mongodb mongo mongodb://host.docker.internal:27017/monila \
+	docker-compose exec mongodb mongo mongodb://host.docker.internal:27017/monila?heartbeatFrequencyMS=300000 \
 		--verbose
 
-docker: build-testcover
-	env GOOS=linux go test -c -o=bin/ferretdb -trimpath -tags=testcover -coverpkg=./... ./cmd/ferretdb
-	docker build --tag=ghcr.io/ferretdb/ferretdb:latest .
+docker-init:
+	docker buildx create --driver=docker-container --name=ferretdb
+
+docker-build: build-testcover
+	env GOOS=linux GOARCH=arm64            go test -c -o=bin/ferretdb-arm64 -trimpath -tags=testcover -coverpkg=./... ./cmd/ferretdb
+	env GOOS=linux GOARCH=amd64 GOAMD64=v2 go test -c -o=bin/ferretdb-amd64 -trimpath -tags=testcover -coverpkg=./... ./cmd/ferretdb
+
+docker-local: docker-build
+	docker buildx build --builder=ferretdb --tag=ghcr.io/ferretdb/ferretdb:local --load .
+
+docker-push: docker-build
+	test $(DOCKER_TAG)
+	docker buildx build --builder=ferretdb --platform=linux/arm64,linux/amd64 --tag=ghcr.io/ferretdb/ferretdb:$(DOCKER_TAG) --push .
 
 bin/golangci-lint:
 	$(MAKE) init

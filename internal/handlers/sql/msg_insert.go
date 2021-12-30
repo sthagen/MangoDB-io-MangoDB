@@ -36,15 +36,28 @@ func (h *storage) MsgInsert(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, 
 	m := document.Map()
 	collection := m[document.Command()].(string)
 	db := m["$db"].(string)
-	docs, _ := m["documents"].(types.Array)
+	docs, _ := m["documents"].(*types.Array)
+
+	ordered, ok := m["ordered"].(bool)
+	if !ok {
+		ordered = true
+	}
+
+	// TODO https://github.com/FerretDB/FerretDB/issues/200
+	_ = ordered
 
 	var inserted int32
-	for _, doc := range docs {
+	for i := 0; i < docs.Len(); i++ {
+		doc, err := docs.Get(i)
+		if err != nil {
+			return nil, lazyerrors.Error(err)
+		}
+
 		d := doc.(types.Document)
 		m := d.Map()
 
 		sql := fmt.Sprintf("INSERT INTO %s (", pgx.Identifier{db, collection}.Sanitize())
-		var args []interface{}
+		var args []any
 
 		for _, k := range d.Keys() {
 			// TODO
@@ -71,7 +84,7 @@ func (h *storage) MsgInsert(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, 
 
 		sql += ")"
 
-		_, err := h.pgPool.Exec(ctx, sql, args...)
+		_, err = h.pgPool.Exec(ctx, sql, args...)
 		if err != nil {
 			return nil, err
 		}

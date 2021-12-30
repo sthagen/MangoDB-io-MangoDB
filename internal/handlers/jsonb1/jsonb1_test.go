@@ -26,8 +26,16 @@ import (
 
 func setup(tb testing.TB) (context.Context, *handlers.Handler, string) {
 	ctx := testutil.Ctx(tb)
-	pool := testutil.Pool(ctx, tb)
-	schema := testutil.Schema(ctx, tb, pool)
-	h := handlers.New(pool, zaptest.NewLogger(tb), nil, nil, NewStorage(pool, zaptest.NewLogger(tb)))
-	return ctx, h, schema
+	pool := testutil.Pool(ctx, tb, new(testutil.PoolOpts))
+	db := testutil.Schema(ctx, tb, pool)
+	handlerOpts := &handlers.NewOpts{
+		PgPool:        pool,
+		Logger:        zaptest.NewLogger(tb),
+		SharedHandler: nil,
+		SQLStorage:    nil,
+		JSONB1Storage: NewStorage(pool, zaptest.NewLogger(tb)),
+		Metrics:       handlers.NewMetrics(),
+	}
+	h := handlers.New(handlerOpts)
+	return ctx, h, db
 }
