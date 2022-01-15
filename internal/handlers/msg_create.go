@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package shared
+package handlers
 
 import (
 	"context"
@@ -24,8 +24,8 @@ import (
 	"github.com/FerretDB/FerretDB/internal/wire"
 )
 
-// MsgDrop removes a collection or view from the database.
-func (h *Handler) MsgDrop(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, error) {
+// MsgCreate adds a collection or view into the database.
+func (h *Handler) MsgCreate(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, error) {
 	document, err := msg.Document()
 	if err != nil {
 		return nil, lazyerrors.Error(err)
@@ -35,9 +35,13 @@ func (h *Handler) MsgDrop(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, er
 	collection := m[document.Command()].(string)
 	db := m["$db"].(string)
 
-	if err = h.pgPool.DropTable(ctx, db, collection); err != nil {
-		if err == pg.ErrNotExist {
-			return nil, common.NewErrorMessage(common.ErrNamespaceNotFound, "ns not found")
+	if err := h.pgPool.CreateSchema(ctx, db); err != nil && err != pg.ErrAlreadyExist {
+		return nil, lazyerrors.Error(err)
+	}
+
+	if err = h.pgPool.CreateTable(ctx, db, collection); err != nil {
+		if err == pg.ErrAlreadyExist {
+			return nil, common.NewErrorMessage(common.ErrNamespaceExists, "Collection already exists. NS: %s.%s", db, collection)
 		}
 		return nil, lazyerrors.Error(err)
 	}
@@ -45,8 +49,6 @@ func (h *Handler) MsgDrop(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, er
 	var reply wire.OpMsg
 	err = reply.SetSections(wire.OpMsgSection{
 		Documents: []types.Document{types.MustMakeDocument(
-			"nIndexesWas", int32(1), // TODO
-			"ns", db+"."+collection,
 			"ok", float64(1),
 		)},
 	})

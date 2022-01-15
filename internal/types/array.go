@@ -43,6 +43,8 @@ func NewArray(values ...any) (*Array, error) {
 }
 
 // MustNewArray is a NewArray that panics in case of error.
+//
+// Deprecated: use `must.NotFail(NewArray(...))` instead.
 func MustNewArray(values ...any) *Array {
 	a, err := NewArray(values...)
 	if err != nil {
@@ -121,8 +123,3 @@ func (a *Array) Append(values ...any) error {
 	a.s = append(a.s, values...)
 	return nil
 }
-
-// check interfaces
-var (
-	_ CompositeType = (*Array)(nil)
-)

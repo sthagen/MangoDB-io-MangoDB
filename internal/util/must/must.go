@@ -12,27 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package shared
+// Package must provides Do helper function.
+package must
 
-import (
-	"context"
-
-	"github.com/FerretDB/FerretDB/internal/types"
-	"github.com/FerretDB/FerretDB/internal/util/lazyerrors"
-	"github.com/FerretDB/FerretDB/internal/wire"
-)
-
-// MsgPing OpMsg containing a ping, used to test whether a server is responding to commands.
-func (h *Handler) MsgPing(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, error) {
-	var reply wire.OpMsg
-	err := reply.SetSections(wire.OpMsgSection{
-		Documents: []types.Document{types.MustMakeDocument(
-			"ok", float64(1),
-		)},
-	})
+// NotFail panics if the error is not nil, returns res otherwise.
+//
+// Use that function only for static initialization, test code, or code that "can't" fail.
+// When in doubt, don't.
+func NotFail[T any](res T, err error) T {
 	if err != nil {
-		return nil, lazyerrors.Error(err)
+		panic(err)
 	}
-
-	return &reply, nil
+	return res
 }

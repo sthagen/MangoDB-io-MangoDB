@@ -122,7 +122,7 @@ func MustMakeDocument(pairs ...any) Document {
 	return doc
 }
 
-func (d Document) compositeType() {}
+func (Document) compositeType() {}
 
 // validate checks if the document is valid.
 func (d Document) validate() error {

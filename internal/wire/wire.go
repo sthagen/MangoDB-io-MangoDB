@@ -12,20 +12,5 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package shared
-
-import "github.com/FerretDB/FerretDB/internal/pg"
-
-// Handler data struct.
-type Handler struct {
-	pgPool   *pg.Pool
-	peerAddr string
-}
-
-// NewHandler returns a pointer to a new Handler, populated with the pgPool and peerAddr.
-func NewHandler(pgPool *pg.Pool, peerAddr string) *Handler {
-	return &Handler{
-		pgPool:   pgPool,
-		peerAddr: peerAddr,
-	}
-}
+// Package wire provides wire protocol implementation.
+package wire

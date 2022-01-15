@@ -12,31 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package shared
+package handlers
 
 import (
 	"context"
+	"os"
+	"runtime"
+	"strconv"
+	"time"
+
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 
 	"github.com/FerretDB/FerretDB/internal/types"
 	"github.com/FerretDB/FerretDB/internal/util/lazyerrors"
 	"github.com/FerretDB/FerretDB/internal/wire"
 )
 
-// MsgCollStats returns a set of statistics for a collection.
-func (h *Handler) MsgCollStats(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, error) {
-	document, err := msg.Document()
-	if err != nil {
-		return nil, lazyerrors.Error(err)
-	}
-
-	m := document.Map()
-	collection := m[document.Command()].(string)
-	db, ok := m["$db"].(string)
-	if !ok {
-		return nil, lazyerrors.New("no db")
-	}
-
-	stats, err := h.pgPool.TableStats(ctx, db, collection)
+// MsgHostInfo returns an OpMsg with the host information.
+func (h *Handler) MsgHostInfo(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, error) {
+	now := time.Now().UTC()
+	hostname, err := os.Hostname()
 	if err != nil {
 		return nil, lazyerrors.Error(err)
 	}
@@ -44,13 +40,17 @@ func (h *Handler) MsgCollStats(ctx context.Context, msg *wire.OpMsg) (*wire.OpMs
 	var reply wire.OpMsg
 	err = reply.SetSections(wire.OpMsgSection{
 		Documents: []types.Document{types.MustMakeDocument(
-			"ns", db+"."+collection,
-			"count", stats.Rows,
-			"size", stats.SizeTotal,
-			"storageSize", stats.SizeTable,
-			"totalIndexSize", stats.SizeIndexes,
-			"totalSize", stats.SizeTotal,
-			"scaleFactor", int64(1),
+			"system", types.MustMakeDocument(
+				"currentTime", now,
+				"hostname", hostname,
+				"cpuAddrSize", int32(strconv.IntSize),
+				"numCores", int32(runtime.NumCPU()),
+				"cpuArch", runtime.GOARCH,
+				"numaEnabled", false,
+			),
+			"os", types.MustMakeDocument(
+				"type", cases.Title(language.English).String(runtime.GOOS),
+			),
 			"ok", float64(1),
 		)},
 	})

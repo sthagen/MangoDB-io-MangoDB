@@ -21,8 +21,8 @@ import (
 	"github.com/FerretDB/FerretDB/internal/types"
 )
 
-func convertDocument(d types.Document) *Document {
-	res := Document(d)
+func convertDocument(d types.Document) *document {
+	res := document(d)
 	return &res
 }
 
@@ -201,18 +201,24 @@ var (
 			`"string":["foo",""],"timestamp":[{"$t":"42"},{"$t":"0"}]}`,
 	}
 
-	documentTestCases = []testCase{handshake1, handshake2, handshake3, handshake4, all}
+	eof = testCase{
+		name: "EOF",
+		j:    `[`,
+		jErr: `unexpected EOF`,
+	}
+
+	documentTestCases = []testCase{handshake1, handshake2, handshake3, handshake4, all, eof}
 )
 
 func TestDocument(t *testing.T) {
 	t.Parallel()
-	testJSON(t, documentTestCases, func() fjsontype { return new(Document) })
+	testJSON(t, documentTestCases, func() fjsontype { return new(document) })
 }
 
-func FuzzDocumentJSON(f *testing.F) {
-	fuzzJSON(f, documentTestCases, func() fjsontype { return new(Document) })
+func FuzzDocument(f *testing.F) {
+	fuzzJSON(f, documentTestCases, func() fjsontype { return new(document) })
 }
 
 func BenchmarkDocument(b *testing.B) {
-	benchmark(b, documentTestCases, func() fjsontype { return new(Document) })
+	benchmark(b, documentTestCases, func() fjsontype { return new(document) })
 }
