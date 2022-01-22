@@ -1,3 +1,6 @@
+FUZZTIME ?= 20s
+FUZZCORPUS ?= ../fuzz-corpus
+
 all: fmt test
 
 help:                                  ## Display this help message
@@ -21,6 +24,7 @@ env-down:                              ## Stop development environment
 	docker-compose down --remove-orphans
 
 init: gen-version                      ## Install development tools
+	rm -fr bin
 	go mod tidy
 	cd tools && go mod tidy
 	go mod verify
@@ -45,17 +49,22 @@ test:                                  ## Run tests
 fuzz-init: gen-version
 	go test -count=0 ./...
 
-fuzz-short:                            ## Fuzz for 1 minute
+fuzz:                                  ## Fuzz for about 2 minutes (with default FUZZTIME)
 	go test -list='Fuzz.*' ./...
-	go test -fuzz=FuzzArray -fuzztime=1m ./internal/bson/
-	go test -fuzz=FuzzDocument -fuzztime=1m ./internal/bson/
-	go test -fuzz=FuzzArray -fuzztime=1m ./internal/fjson/
-	go test -fuzz=FuzzDocument -fuzztime=1m ./internal/fjson/
-	go test -fuzz=FuzzMsg -fuzztime=1m ./internal/wire/
-	go test -fuzz=FuzzQuery -fuzztime=1m ./internal/wire/
-	go test -fuzz=FuzzReply -fuzztime=1m ./internal/wire/
+	# Running seven functions for $(FUZZTIME) each..."
+	go test -fuzz=FuzzArray -fuzztime=$(FUZZTIME) ./internal/bson/
+	go test -fuzz=FuzzDocument -fuzztime=$(FUZZTIME) ./internal/bson/
+	go test -fuzz=FuzzArray -fuzztime=$(FUZZTIME) ./internal/fjson/
+	go test -fuzz=FuzzDocument -fuzztime=$(FUZZTIME) ./internal/fjson/
+	go test -fuzz=FuzzMsg -fuzztime=$(FUZZTIME) ./internal/wire/
+	go test -fuzz=FuzzQuery -fuzztime=$(FUZZTIME) ./internal/wire/
+	go test -fuzz=FuzzReply -fuzztime=$(FUZZTIME) ./internal/wire/
 
-bench-short:                           ## Benchmark for 5 seconds
+fuzz-corpus:                           ## Sync generated fuzz corpus with FUZZCORPUS
+	go run ./cmd/fuzztool/fuzztool.go -src=$(FUZZCORPUS) -dst=generated
+	go run ./cmd/fuzztool/fuzztool.go -dst=$(FUZZCORPUS) -src=generated
+
+bench-short:                           ## Benchmark for about 20 seconds
 	go test -list='Benchmark.*' ./...
 	rm -f new.txt
 	go test -bench=BenchmarkArray    -benchtime=5s ./internal/bson/  | tee -a new.txt
@@ -91,8 +100,8 @@ docker-init:
 	docker buildx create --driver=docker-container --name=ferretdb
 
 docker-build: build-testcover
-	env GOOS=linux GOARCH=arm64            go test -c -o=bin/ferretdb-arm64 -trimpath -tags=testcover -coverpkg=./... ./cmd/ferretdb
-	env GOOS=linux GOARCH=amd64 GOAMD64=v2 go test -c -o=bin/ferretdb-amd64 -trimpath -tags=testcover -coverpkg=./... ./cmd/ferretdb
+	env GOOS=linux GOARCH=arm64 go test -c -o=bin/ferretdb-arm64 -trimpath -tags=testcover -coverpkg=./... ./cmd/ferretdb
+	env GOOS=linux GOARCH=amd64 go test -c -o=bin/ferretdb-amd64 -trimpath -tags=testcover -coverpkg=./... ./cmd/ferretdb
 
 docker-local: docker-build
 	docker buildx build --builder=ferretdb --tag=ghcr.io/ferretdb/ferretdb:local --load .

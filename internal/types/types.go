@@ -14,7 +14,7 @@
 
 // Package types provides Go types matching BSON types that don't have built-in Go equivalents.
 //
-// All BSON data types have three representations in FerretDB:
+// All BSON types have three representations in FerretDB:
 //
 //  1. As they are used in "business logic" / handlers - `types` package.
 //  2. As they are used in the wire protocol implementation - `bson` package.
@@ -25,22 +25,23 @@
 //
 // Mapping
 //
-// Composite types
-//  types.Document   *bson.Document  *fjson.Document
-//  *types.Array     *bson.Array     *fjson.Array
-// Scalar types
-//  float64          *bson.Double     *fjson.Double
-//  string           *bson.String     *fjson.String
-//  types.Binary     *bson.Binary     *fjson.Binary
-//  types.ObjectID   *bson.ObjectID   *fjson.ObjectID
-//  bool             *bson.Bool       *fjson.Bool
-//  time.Time        *bson.DateTime   *fjson.DateTime
-//  any(nil)         any(nil)         any(nil)
-//  types.Regex      *bson.Regex      *fjson.Regex
-//  int32            *bson.Int32      *fjson.Int32
-//  types.Timestamp  *bson.Timestamp  *fjson.Timestamp
-//  int64            *bson.Int64      *fjson.Int64
-//  types.CString    *bson.CString    *fjson.CString
+// Composite types (passed by pointers)
+//  *types.Document  *bson.Document       *fjson.documentType   Document
+//  *types.Array     *bson.arrayType      *fjson.arrayType      Array
+//
+// Scalar types (passed by values)
+//  float64          *bson.doubleType     *fjson.doubleType     64-bit binary floating point
+//  string           *bson.stringType     *fjson.stringType     UTF-8 string
+//  types.Binary     *bson.binaryType     *fjson.binaryType     Binary data
+//  types.ObjectID   *bson.objectIDType   *fjson.objectIDType   ObjectId
+//  bool             *bson.boolType       *fjson.boolType       Boolean
+//  time.Time        *bson.dateTimeType   *fjson.dateTimeType   UTC datetime
+//  types.NullType   *bson.nullType       *fjson.nullType       Null
+//  types.Regex      *bson.regexType      *fjson.regexType      Regular expression
+//  int32            *bson.int32Type      *fjson.int32Type      32-bit integer
+//  types.Timestamp  *bson.timestampType  *fjson.timestampType  Timestamp
+//  int64            *bson.int64Type      *fjson.int64Type      64-bit integer
+//  types.CString    *bson.CString        *fjson.cstringType    Zero-terminated UTF-8 string
 package types
 
 import (
@@ -52,7 +53,7 @@ const MaxDocumentLen = 16777216
 
 // CompositeType represents composite type - Document or *Array.
 type CompositeType interface {
-	Document | *Array
+	*Document | *Array
 	GetByPath(path ...string) (any, error)
 
 	compositeType() // seal for go-sumtype
@@ -75,12 +76,20 @@ type (
 
 	// Timestamp represents BSON type Timestamp.
 	Timestamp uint64
+
+	// NullType represents BSON type Null.
+	//
+	// Most callers should use types.Null value instead.
+	NullType struct{}
 )
+
+// Null represents BSON value Null.
+var Null = NullType{}
 
 // validateValue validates value.
 func validateValue(value any) error {
 	switch value := value.(type) {
-	case Document:
+	case *Document:
 		return value.validate()
 	case *Array:
 		// It is impossible to construct invalid Array using exported function, methods, or type conversions,
@@ -98,7 +107,7 @@ func validateValue(value any) error {
 		return nil
 	case time.Time:
 		return nil
-	case nil:
+	case NullType:
 		return nil
 	case Regex:
 		return nil
