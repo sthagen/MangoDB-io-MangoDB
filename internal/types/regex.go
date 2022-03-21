@@ -12,19 +12,40 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package common
+package types
 
 import (
-	"context"
-
-	"github.com/FerretDB/FerretDB/internal/wire"
+	"fmt"
+	"regexp"
 )
 
-type Storage interface {
-	MsgCount(context.Context, *wire.OpMsg) (*wire.OpMsg, error)
-	MsgCreateIndexes(context.Context, *wire.OpMsg) (*wire.OpMsg, error)
-	MsgDelete(context.Context, *wire.OpMsg) (*wire.OpMsg, error)
-	MsgFind(context.Context, *wire.OpMsg) (*wire.OpMsg, error)
-	MsgInsert(context.Context, *wire.OpMsg) (*wire.OpMsg, error)
-	MsgUpdate(context.Context, *wire.OpMsg) (*wire.OpMsg, error)
+// Regex represents BSON type Regex.
+type Regex struct {
+	Pattern string
+	Options string
+}
+
+// Compile returns Go Regexp object.
+func (r Regex) Compile() (*regexp.Regexp, error) {
+	var opts string
+	for _, o := range r.Options {
+		switch o {
+		case 'i':
+			opts += "i"
+		default:
+			return nil, fmt.Errorf("types.Regex.Compile: unhandled regex option %v (%v)", o, r)
+		}
+	}
+
+	expr := r.Pattern
+	if opts != "" {
+		expr = "(?" + opts + ")" + expr
+	}
+
+	re, err := regexp.Compile(expr)
+	if err != nil {
+		return nil, fmt.Errorf("types.Regex.Compile: %w", err)
+	}
+
+	return re, nil
 }
