@@ -15,14 +15,15 @@
 package common
 
 import (
+	"fmt"
+
 	"github.com/FerretDB/FerretDB/internal/types"
 	"github.com/FerretDB/FerretDB/internal/util/lazyerrors"
 )
 
 // isProjectionInclusion: projection can be only inclusion or exlusion. Validate and return true if inclusion.
-// Exception for the _id field
+// Exception for the _id field.
 func isProjectionInclusion(projection *types.Document) (inclusion bool, err error) {
-	errMsg := "projection must contain only inclusions or exclusions"
 	var exclusion bool
 	for k, v := range projection.Map() {
 		if k == "_id" { // _id is a special case and can be both
@@ -32,13 +33,17 @@ func isProjectionInclusion(projection *types.Document) (inclusion bool, err erro
 		case bool:
 			if v {
 				if exclusion {
-					err = lazyerrors.New(errMsg)
+					err = NewError(ErrProjectionInEx,
+						fmt.Errorf("Cannot do inclusion on field %s in exclusion projection", k),
+					)
 					return
 				}
 				inclusion = true
 			} else {
 				if inclusion {
-					err = lazyerrors.New(errMsg)
+					err = NewError(ErrProjectionExIn,
+						fmt.Errorf("Cannot do exclusion on field %s in inclusion projection", k),
+					)
 					return
 				}
 				exclusion = true
@@ -46,19 +51,23 @@ func isProjectionInclusion(projection *types.Document) (inclusion bool, err erro
 		case int32, int64, float64:
 			if compareScalars(v, int32(0)) == equal {
 				if inclusion {
-					err = lazyerrors.New(errMsg)
+					err = NewError(ErrProjectionExIn,
+						fmt.Errorf("Cannot do exclusion on field %s in inclusion projection", k),
+					)
 					return
 				}
 				exclusion = true
 			} else {
 				if exclusion {
-					err = lazyerrors.New(errMsg)
+					err = NewError(ErrProjectionInEx,
+						fmt.Errorf("Cannot do inclusion on field %s in exclusion projection", k),
+					)
 					return
 				}
 				inclusion = true
 			}
 		default:
-			err = lazyerrors.Errorf("unsupported operation %s %v (%T)", k, v, v)
+			err = fmt.Errorf("unsupported operation %s %v (%T)", k, v, v)
 			return
 		}
 	}
@@ -79,7 +88,6 @@ func ProjectDocuments(docs []*types.Document, projection *types.Document) error 
 	projectionMap := projection.Map()
 	for i := 0; i < len(docs); i++ {
 		for k := range docs[i].Map() {
-
 			v, ok := projectionMap[k]
 			if !ok {
 				if k == "_id" { // if _id is not in projection map, do not do anything with it
