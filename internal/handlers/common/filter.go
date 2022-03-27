@@ -16,7 +16,6 @@ package common
 
 import (
 	"fmt"
-	"math"
 	"strings"
 
 	"github.com/FerretDB/FerretDB/internal/types"
@@ -50,12 +49,8 @@ func FilterDocument(doc, filter *types.Document) (bool, error) {
 // filterDocumentPair handles a single filter element key/value pair {filterKey: filterValue}.
 func filterDocumentPair(doc *types.Document, filterKey string, filterValue any) (bool, error) {
 	if strings.HasPrefix(filterKey, "$") {
-		// {$operator: [expr1, expr2, ...]}
-		exprs, err := AssertType[*types.Array](filterValue)
-		if err != nil {
-			return false, err
-		}
-		return filterLala(doc, filterKey, exprs)
+		// {$operator: filterValue}
+		return filterOperator(doc, filterKey, filterValue)
 	}
 
 	docValue, err := doc.Get(filterKey)
@@ -82,11 +77,15 @@ func filterDocumentPair(doc *types.Document, filterKey string, filterValue any) 
 	}
 }
 
-// filterLala handles {$operator: [expr1, expr2, ...]} filter.
-func filterLala(doc *types.Document, operator string, exprs *types.Array) (bool, error) {
+// filterOperator handles a top-level operator filter {$operator: filterValue}.
+func filterOperator(doc *types.Document, operator string, filterValue any) (bool, error) {
 	switch operator {
 	case "$and":
 		// {$and: [{expr1}, {expr2}, ...]}
+		exprs, err := AssertType[*types.Array](filterValue)
+		if err != nil {
+			return false, err
+		}
 		for i := 0; i < exprs.Len(); i++ {
 			expr := must.NotFail(exprs.Get(i)).(*types.Document)
 			matches, err := FilterDocument(doc, expr)
@@ -101,6 +100,10 @@ func filterLala(doc *types.Document, operator string, exprs *types.Array) (bool,
 
 	case "$or":
 		// {$or: [{expr1}, {expr2}, ...]}
+		exprs, err := AssertType[*types.Array](filterValue)
+		if err != nil {
+			return false, err
+		}
 		for i := 0; i < exprs.Len(); i++ {
 			expr := must.NotFail(exprs.Get(i)).(*types.Document)
 			matches, err := FilterDocument(doc, expr)
@@ -115,6 +118,10 @@ func filterLala(doc *types.Document, operator string, exprs *types.Array) (bool,
 
 	case "$nor":
 		// {$nor: [{expr1}, {expr2}, ...]}
+		exprs, err := AssertType[*types.Array](filterValue)
+		if err != nil {
+			return false, err
+		}
 		for i := 0; i < exprs.Len(); i++ {
 			expr := must.NotFail(exprs.Get(i)).(*types.Document)
 			matches, err := FilterDocument(doc, expr)
@@ -239,6 +246,13 @@ func filterFieldExpr(fieldValue any, expr *types.Document) (bool, error) {
 				return false, err
 			}
 
+		case "$bitsAllClear":
+			// {field: {$bitsAllClear: value}}
+			res, err := filterFieldExprBitsAllClear(fieldValue, exprValue)
+			if !res || err != nil {
+				return false, err
+			}
+
 		default:
 			panic(fmt.Sprintf("filterFieldExpr: %q", exprKey))
 		}
@@ -301,29 +315,49 @@ func filterFieldExprSize(fieldValue any, sizeValue any) (bool, error) {
 		return false, nil
 	}
 
-	var size int
-	switch sizeValue := sizeValue.(type) {
-	case float64:
-		if sizeValue != math.Trunc(sizeValue) || math.IsNaN(sizeValue) || math.IsInf(sizeValue, 0) {
+	size, err := GetWholeNumberParam(sizeValue)
+	if err != nil {
+		switch err {
+		case errUnexpectedType:
+			return false, NewErrorMsg(ErrBadValue, "$size needs a number")
+		case errNotWholeNumber:
 			return false, NewErrorMsg(ErrBadValue, "$size must be a whole number")
+		default:
+			return false, err
 		}
-		size = int(sizeValue)
-	case int32:
-		size = int(sizeValue)
-	case int64:
-		size = int(sizeValue)
-	default:
-		return false, NewErrorMsg(ErrBadValue, "$size needs a number")
 	}
-
-	// TODO check float negative zero
 
 	if size < 0 {
 		return false, NewErrorMsg(ErrBadValue, "$size may not be negative")
 	}
 
-	if arr.Len() != size {
+	if arr.Len() != int(size) {
 		return false, nil
+	}
+
+	return true, nil
+}
+
+// filterFieldExprBitsAllClear handles {field: {$bitsAllClear: value}} filter.
+func filterFieldExprBitsAllClear(fieldValue, maskValue any) (bool, error) {
+	mask, err := getBinaryMaskParam(maskValue)
+	if err != nil {
+		return false, err
+	}
+
+	fieldBinary, err := getBinaryParam(fieldValue)
+	if err != nil {
+		return false, err
+	}
+
+	if len(fieldBinary.B) != len(mask.B) {
+		panic("field and mask sizes should be equal")
+	}
+
+	for i := 0; i < len(fieldBinary.B); i++ {
+		if (fieldBinary.B[i] & mask.B[i]) != 0 {
+			return false, nil
+		}
 	}
 
 	return true, nil
