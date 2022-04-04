@@ -12,29 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package testutil
+// Package integration provides FerretDB integration tests.
+package integration
 
 import (
-	"bytes"
-	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
-
-	"github.com/FerretDB/FerretDB/internal/fjson"
-	"github.com/FerretDB/FerretDB/internal/types"
+	"go.mongodb.org/mongo-driver/bson"
 )
 
-// Dump returns string representation for debugging.
-func Dump[T types.Type](tb testing.TB, o T) string {
-	tb.Helper()
+// collectIDs returns all _id values from given documents.
+func collectIDs(t testing.TB, docs []bson.D) []any {
+	t.Helper()
 
-	// We might switch to go-spew or something else later.
-	b, err := fjson.Marshal(o)
-	require.NoError(tb, err)
+	ids := make([]any, len(docs))
+	for i, doc := range docs {
+		id, ok := doc.Map()["_id"]
+		require.True(t, ok)
+		ids[i] = id
+	}
 
-	dst := bytes.NewBuffer(make([]byte, 0, len(b)))
-	err = json.Indent(dst, b, "", "  ")
-	require.NoError(tb, err)
-	return dst.String()
+	return ids
 }

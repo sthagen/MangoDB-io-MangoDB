@@ -55,17 +55,18 @@ var AllModes = []Mode{NormalMode, ProxyMode, DiffNormalMode, DiffProxyMode}
 type conn struct {
 	netConn net.Conn
 	mode    Mode
+	l       *zap.SugaredLogger
 	h       *pg.Handler
 	proxy   *proxy.Handler
-	l       *zap.SugaredLogger
 }
 
 // newConnOpts represents newConn options.
 type newConnOpts struct {
 	netConn         net.Conn
+	mode            Mode
+	l               *zap.Logger
 	pgPool          *pgdb.Pool
 	proxyAddr       string
-	mode            Mode
 	handlersMetrics *pg.Metrics
 	startTime       time.Time
 }
@@ -73,7 +74,7 @@ type newConnOpts struct {
 // newConn creates a new client connection for given net.Conn.
 func newConn(opts *newConnOpts) (*conn, error) {
 	prefix := fmt.Sprintf("// %s -> %s ", opts.netConn.RemoteAddr(), opts.netConn.LocalAddr())
-	l := zap.L().Named(prefix)
+	l := opts.l.Named(prefix)
 
 	peerAddr := opts.netConn.RemoteAddr().String()
 
@@ -95,9 +96,9 @@ func newConn(opts *newConnOpts) (*conn, error) {
 	return &conn{
 		netConn: opts.netConn,
 		mode:    opts.mode,
+		l:       l.Sugar(),
 		h:       pg.New(handlerOpts),
 		proxy:   p,
-		l:       l.Sugar(),
 	}, nil
 }
 
@@ -107,6 +108,20 @@ func newConn(opts *newConnOpts) (*conn, error) {
 // The caller is responsible for closing the underlying net.Conn.
 func (c *conn) run(ctx context.Context) (err error) {
 	done := make(chan struct{})
+
+	// handle ctx cancelation
+	go func() {
+		select {
+		case <-done:
+			// nothing, let goroutine exit
+		case <-ctx.Done():
+			// unblocks ReadMessage below; any non-zero past value will do
+			if e := c.netConn.SetDeadline(time.Unix(0, 0)); e != nil {
+				c.l.Warnf("Failed to set deadline: %s", e)
+			}
+		}
+	}()
+
 	defer func() {
 		if p := recover(); p != nil {
 			// Log human-readable stack trace there (included in the error level automatically).
@@ -118,16 +133,8 @@ func (c *conn) run(ctx context.Context) (err error) {
 			err = ctx.Err()
 		}
 
+		// let goroutine above exit
 		close(done)
-	}()
-
-	// handle ctx cancelation
-	go func() {
-		select {
-		case <-done:
-		case <-ctx.Done():
-			c.netConn.SetDeadline(time.Unix(0, 0))
-		}
 	}()
 
 	bufr := bufio.NewReader(c.netConn)
@@ -238,7 +245,7 @@ func (c *conn) run(ctx context.Context) (err error) {
 		}
 
 		if resCloseConn {
-			err = errors.New("internal error")
+			err = errors.New("fatal error")
 			return
 		}
 	}

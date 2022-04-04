@@ -12,29 +12,29 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package testutil
+package integration
 
 import (
-	"bytes"
-	"encoding/json"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/FerretDB/FerretDB/internal/fjson"
-	"github.com/FerretDB/FerretDB/internal/types"
+	"go.mongodb.org/mongo-driver/bson"
 )
 
-// Dump returns string representation for debugging.
-func Dump[T types.Type](tb testing.TB, o T) string {
-	tb.Helper()
+func TestCommandsDiagnosticGetLog(t *testing.T) {
+	t.Parallel()
+	ctx, collection := setupWithOpts(t, &setupOpts{
+		databaseName: "admin",
+	})
 
-	// We might switch to go-spew or something else later.
-	b, err := fjson.Marshal(o)
-	require.NoError(tb, err)
+	var actual bson.D
+	err := collection.Database().RunCommand(ctx, bson.D{{"getLog", "startupWarnings"}}).Decode(&actual)
+	require.NoError(t, err)
 
-	dst := bytes.NewBuffer(make([]byte, 0, len(b)))
-	err = json.Indent(dst, b, "", "  ")
-	require.NoError(tb, err)
-	return dst.String()
+	m := actual.Map()
+	t.Log(m)
+
+	assert.Equal(t, 1.0, m["ok"])
+	assert.IsType(t, int32(0), m["totalLinesWritten"])
 }
