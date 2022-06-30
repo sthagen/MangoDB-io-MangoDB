@@ -12,16 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package dummy
+package version
 
 import (
-	"context"
+	"testing"
 
-	"github.com/FerretDB/FerretDB/internal/handlers/common"
-	"github.com/FerretDB/FerretDB/internal/wire"
+	"github.com/stretchr/testify/assert"
+
+	"github.com/FerretDB/FerretDB/internal/types"
+	"github.com/FerretDB/FerretDB/internal/util/must"
+	"github.com/FerretDB/FerretDB/internal/util/testutil"
 )
 
-// MsgWhatsMyURI implements HandlerInterface.
-func (h *Handler) MsgWhatsMyURI(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, error) {
-	return common.MsgWhatsMyURI(ctx, msg)
+func TestGet(t *testing.T) {
+	v := Get()
+	assert.NotEqual(t, "", v.Version)
+	assert.NotEqual(t, unknown, v.Version)
+	assert.Equal(t, "5.0.42", MongoDBVersion)
+	testutil.AssertEqual(t, must.NotFail(types.NewArray(int32(5), int32(0), int32(42), int32(0))), MongoDBVersionArray)
 }
