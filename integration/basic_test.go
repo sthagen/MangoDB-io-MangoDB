@@ -24,13 +24,16 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/x/mongo/driver"
 
+	"github.com/FerretDB/FerretDB/integration/setup"
 	"github.com/FerretDB/FerretDB/integration/shareddata"
+	"github.com/FerretDB/FerretDB/internal/util/testutil"
 )
 
 func TestMostCommandsAreCaseSensitive(t *testing.T) {
 	t.Parallel()
-	ctx, collection := Setup(t)
+	ctx, collection := setup.Setup(t)
 	db := collection.Database()
 
 	res := db.RunCommand(ctx, bson.D{{"listcollections", 1}})
@@ -54,7 +57,7 @@ func TestMostCommandsAreCaseSensitive(t *testing.T) {
 
 func TestFindNothing(t *testing.T) {
 	t.Parallel()
-	ctx, collection := Setup(t)
+	ctx, collection := setup.Setup(t)
 
 	cursor, err := collection.Find(ctx, bson.D{})
 	require.NoError(t, err)
@@ -73,7 +76,7 @@ func TestFindNothing(t *testing.T) {
 func TestInsertFind(t *testing.T) {
 	t.Parallel()
 	providers := []shareddata.Provider{shareddata.Scalars, shareddata.Composites}
-	ctx, collection := Setup(t, providers...)
+	ctx, collection := setup.Setup(t, providers...)
 
 	var docs []bson.D
 	for _, provider := range providers {
@@ -102,7 +105,7 @@ func TestInsertFind(t *testing.T) {
 
 //nolint:paralleltest // we test a global list of databases
 func TestFindCommentMethod(t *testing.T) {
-	ctx, collection := Setup(t, shareddata.Scalars)
+	ctx, collection := setup.Setup(t, shareddata.Scalars)
 	name := collection.Name()
 	databaseNames, err := collection.Database().Client().ListDatabaseNames(ctx, bson.D{})
 	require.NoError(t, err)
@@ -117,7 +120,7 @@ func TestFindCommentMethod(t *testing.T) {
 
 //nolint:paralleltest // we test a global list of databases
 func TestFindCommentQuery(t *testing.T) {
-	ctx, collection := Setup(t, shareddata.Scalars)
+	ctx, collection := setup.Setup(t, shareddata.Scalars)
 	name := collection.Name()
 	databaseNames, err := collection.Database().Client().ListDatabaseNames(ctx, bson.D{})
 	require.NoError(t, err)
@@ -133,7 +136,7 @@ func TestCollectionName(t *testing.T) {
 	t.Parallel()
 
 	t.Run("Err", func(t *testing.T) {
-		ctx, collection := Setup(t)
+		ctx, collection := setup.Setup(t)
 
 		collectionName300 := strings.Repeat("a", 300)
 		cases := map[string]struct {
@@ -141,17 +144,17 @@ func TestCollectionName(t *testing.T) {
 			err        *mongo.CommandError
 			alt        string
 		}{
-			"TooLongForBoth": {
+			"TooLongForBothDBs": {
 				collection: collectionName300,
 				err: &mongo.CommandError{
 					Name: "InvalidNamespace",
 					Code: 73,
 					Message: fmt.Sprintf(
-						"Fully qualified namespace is too long. Namespace: testcollectionname-err.%s Max: 255",
+						"Fully qualified namespace is too long. Namespace: testcollectionname_err.%s Max: 255",
 						collectionName300,
 					),
 				},
-				alt: fmt.Sprintf("Invalid collection name: 'testcollectionname-err.%s'", collectionName300),
+				alt: fmt.Sprintf("Invalid collection name: 'testcollectionname_err.%s'", collectionName300),
 			},
 			"WithADollarSign": {
 				collection: "collection_name_with_a-$",
@@ -160,16 +163,16 @@ func TestCollectionName(t *testing.T) {
 					Code:    73,
 					Message: `Invalid collection name: collection_name_with_a-$`,
 				},
-				alt: `Invalid collection name: 'testcollectionname-err.collection_name_with_a-$'`,
+				alt: `Invalid collection name: 'testcollectionname_err.collection_name_with_a-$'`,
 			},
 			"Empty": {
 				collection: "",
 				err: &mongo.CommandError{
 					Name:    "InvalidNamespace",
 					Code:    73,
-					Message: "Invalid namespace specified 'testcollectionname-err.'",
+					Message: "Invalid namespace specified 'testcollectionname_err.'",
 				},
-				alt: "Invalid collection name: 'testcollectionname-err.'",
+				alt: "Invalid collection name: 'testcollectionname_err.'",
 			},
 		}
 
@@ -183,7 +186,7 @@ func TestCollectionName(t *testing.T) {
 	})
 
 	t.Run("Ok", func(t *testing.T) {
-		ctx, collection := Setup(t)
+		ctx, collection := setup.Setup(t)
 
 		longCollectionName := strings.Repeat("a", 100)
 		err := collection.Database().CreateCollection(ctx, longCollectionName)
@@ -193,5 +196,69 @@ func TestCollectionName(t *testing.T) {
 		require.NoError(t, err)
 
 		assert.Contains(t, names, longCollectionName)
+	})
+}
+
+func TestDatabaseName(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Err", func(t *testing.T) {
+		ctx, collection := setup.Setup(t)
+
+		dbName64 := strings.Repeat("a", 64)
+
+		cases := map[string]struct {
+			db  string
+			err *mongo.CommandError
+			alt string
+		}{
+			"TooLongForBothDBs": {
+				db: dbName64,
+				err: &mongo.CommandError{
+					Name: "InvalidNamespace",
+					Code: 73,
+					Message: fmt.Sprintf(
+						"Invalid namespace specified '%s.%s'",
+						dbName64,
+						"testdatabasename_err_toolongforbothdbs",
+					),
+				},
+				alt: fmt.Sprintf("Invalid namespace: %s.%s", dbName64, "testdatabasename_err_toolongforbothdbs"),
+			},
+			"WithADollarSign": {
+				db: "name_with_a-$",
+				err: &mongo.CommandError{
+					Name:    "InvalidNamespace",
+					Code:    73,
+					Message: `Invalid namespace: name_with_a-$.testdatabasename_err_withadollarsign`,
+				},
+			},
+		}
+
+		for name, tc := range cases {
+			name, tc := name, tc
+			t.Run(name, func(t *testing.T) {
+				// there is no explicit command to create database, so create collection instead
+				err := collection.Database().Client().Database(tc.db).CreateCollection(ctx, testutil.CollectionName(t))
+				AssertEqualAltError(t, *tc.err, tc.alt, err)
+			})
+		}
+	})
+
+	t.Run("Empty", func(t *testing.T) {
+		ctx, collection := setup.Setup(t)
+
+		err := collection.Database().Client().Database("").CreateCollection(ctx, testutil.CollectionName(t))
+		expectedErr := driver.InvalidOperationError(driver.InvalidOperationError{MissingField: "Database"})
+		assert.Equal(t, expectedErr, err)
+	})
+
+	t.Run("63ok", func(t *testing.T) {
+		ctx, collection := setup.Setup(t)
+
+		dbName63 := strings.Repeat("a", 63)
+		err := collection.Database().Client().Database(dbName63).CreateCollection(ctx, testutil.CollectionName(t))
+		require.NoError(t, err)
+		collection.Database().Client().Database(dbName63).Drop(ctx)
 	})
 }
