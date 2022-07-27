@@ -12,20 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package integration
+package dummy
 
-// compatTestCaseResultType represents compatibility test case result type.
-//
-// It is used to avoid errors with invalid queries making tests pass.
-type compatTestCaseResultType int
+import (
+	"context"
 
-const (
-	// Test case should return non-empty result.
-	nonEmptyResult compatTestCaseResultType = iota
-
-	// Test case should return empty result.
-	emptyResult
-
-	// Test case should fail.
-	errorResult
+	"github.com/FerretDB/FerretDB/internal/util/must"
+	"github.com/FerretDB/FerretDB/internal/wire"
 )
+
+// MsgExplain implements HandlerInterface.
+func (h *Handler) MsgExplain(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, error) {
+	return nil, notImplemented(must.NotFail(msg.Document()).Command())
+}
