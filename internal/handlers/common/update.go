@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 	"time"
 
 	"golang.org/x/exp/slices"
@@ -34,10 +35,6 @@ func UpdateDocument(doc, update *types.Document) (bool, error) {
 	for _, updateOp := range update.Keys() {
 		updateV := must.NotFail(update.Get(updateOp))
 
-		if _, ok := UpdateOperators[updateOp]; !ok {
-			return false, fmt.Errorf("UpdateDocument: unhandled operation %q", updateOp)
-		}
-
 		switch updateOp {
 		case "$currentDate":
 			changed, err = processCurrentDateFieldExpression(doc, updateV)
@@ -46,34 +43,15 @@ func UpdateDocument(doc, update *types.Document) (bool, error) {
 			}
 
 		case "$set":
-			fallthrough
+			changed, err = processSetFieldExpression(doc, updateV.(*types.Document), false)
+			if err != nil {
+				return false, err
+			}
 
 		case "$setOnInsert":
-			// expecting here a document since all checks were made in ValidateUpdateOperators func
-			setDoc := updateV.(*types.Document)
-
-			if setDoc.Len() == 0 {
-				continue
-			}
-			sort.Strings(setDoc.Keys())
-			for _, setKey := range setDoc.Keys() {
-				setValue := must.NotFail(setDoc.Get(setKey))
-				if doc.Has(setKey) {
-					result := types.Compare(setValue, must.NotFail(doc.Get(setKey)))
-					if len(result) != 1 {
-						panic("$set: there should be only one result")
-					}
-
-					if result[0] == types.Equal {
-						continue
-					}
-				}
-
-				if err := doc.Set(setKey, setValue); err != nil {
-					return false, err
-				}
-
-				changed = true
+			changed, err = processSetFieldExpression(doc, updateV.(*types.Document), true)
+			if err != nil {
+				return false, err
 			}
 
 		case "$unset":
@@ -92,10 +70,133 @@ func UpdateDocument(doc, update *types.Document) (bool, error) {
 				return false, err
 			}
 
+		case "$pop":
+			changed, err = processPopFieldExpression(doc, updateV.(*types.Document))
+			if err != nil {
+				return false, err
+			}
+
 		default:
-			// handled by UpdateOperators above
-			panic(fmt.Errorf("unhandled operation %q", updateOp))
+			if strings.HasPrefix(updateOp, "$") {
+				return false, NewError(ErrNotImplemented, fmt.Errorf("UpdateDocument: unhandled operation %q", updateOp))
+			}
+
+			// Treats the update as a Replacement object.
+			setDoc := update
+
+			sort.Strings(setDoc.Keys())
+
+			for _, setKey := range doc.Keys() {
+				if !setDoc.Has(setKey) && setKey != "_id" {
+					doc.Remove(setKey)
+				}
+			}
+
+			for _, setKey := range setDoc.Keys() {
+				setValue := must.NotFail(setDoc.Get(setKey))
+				if err := doc.Set(setKey, setValue); err != nil {
+					return false, err
+				}
+			}
+
+			changed = true
 		}
+	}
+
+	return changed, nil
+}
+
+// processSetFieldExpression changes document according to $set and $setOnInsert operators.
+// If the document was changed it returns true.
+func processSetFieldExpression(doc, setDoc *types.Document, setOnInsert bool) (bool, error) {
+	var changed bool
+
+	sort.Strings(setDoc.Keys())
+
+	for _, setKey := range setDoc.Keys() {
+		setValue := must.NotFail(setDoc.Get(setKey))
+
+		path := types.NewPathFromString(setKey)
+
+		if doc.HasByPath(path) {
+			result := types.Compare(setValue, must.NotFail(doc.GetByPath(path)))
+			if len(result) != 1 {
+				panic("$set: there should be only one result")
+			}
+
+			if result[0] == types.Equal {
+				continue
+			}
+		}
+
+		// we should insert the value if it's a regular key
+		if setOnInsert && path.Len() > 1 {
+			continue
+		}
+
+		err := doc.SetByPath(path, setValue)
+		if err != nil {
+			return false, err
+		}
+
+		changed = true
+	}
+
+	return changed, nil
+}
+
+// processPopFieldExpression changes document according to $pop operator.
+// If the document was changed it returns true.
+func processPopFieldExpression(doc *types.Document, update *types.Document) (bool, error) {
+	var changed bool
+
+	for _, key := range update.Keys() {
+		popValueRaw := must.NotFail(update.Get(key))
+
+		popValue, err := GetWholeNumberParam(popValueRaw)
+		if err != nil {
+			return false, NewWriteErrorMsg(ErrFailedToParse, fmt.Sprintf(`Expected a number in: %s: "%v"`, key, popValueRaw))
+		}
+
+		if popValue != 1 && popValue != -1 {
+			return false, NewWriteErrorMsg(ErrFailedToParse, fmt.Sprintf("$pop expects 1 or -1, found: %d", popValue))
+		}
+
+		path := types.NewPathFromString(key)
+
+		if !doc.HasByPath(path) {
+			continue
+		}
+
+		val, err := doc.GetByPath(path)
+		if err != nil {
+			return false, err
+		}
+
+		array, ok := val.(*types.Array)
+		if !ok {
+			return false, NewWriteErrorMsg(
+				ErrTypeMismatch,
+				fmt.Sprintf("Path '%s' contains an element of non-array type '%s'", key, AliasFromType(val)),
+			)
+		}
+
+		if array.Len() == 0 {
+			continue
+		}
+
+		if popValue == -1 {
+			array.Remove(0)
+		} else {
+			array.Remove(array.Len() - 1)
+		}
+
+		err = doc.SetByPath(path, array)
+		if err != nil {
+			return false, err
+		}
+
+		changed = true
 	}
 
 	return changed, nil
@@ -242,36 +343,48 @@ func processCurrentDateFieldExpression(doc *types.Document, currentDateVal any) 
 // ValidateUpdateOperators validates update statement.
 func ValidateUpdateOperators(update *types.Document) error {
 	var err error
-	if err = checkAllModifiersSupported(update); err != nil {
+	if _, err = HasSupportedUpdateModifiers(update); err != nil {
 		return err
 	}
+
 	inc, err := extractValueFromUpdateOperator("$inc", update)
 	if err != nil {
 		return err
 	}
+
 	set, err := extractValueFromUpdateOperator("$set", update)
 	if err != nil {
 		return err
 	}
+
 	_, err = extractValueFromUpdateOperator("$unset", update)
 	if err != nil {
 		return err
 	}
+
 	_, err = extractValueFromUpdateOperator("$setOnInsert", update)
 	if err != nil {
 		return err
 	}
+
+	_, err = extractValueFromUpdateOperator("$pop", update)
+	if err != nil {
+		return err
+	}
+
 	if err = checkConflictingChanges(set, inc); err != nil {
 		return err
 	}
+
 	if err = validateCurrentDateExpression(update); err != nil {
 		return err
 	}
 	return nil
 }
 
-// checkAllModifiersSupported checks that update document contains only modifiers that are supported.
-func checkAllModifiersSupported(update *types.Document) error {
+// HasSupportedUpdateModifiers checks that update document contains only modifiers that are supported.
+func HasSupportedUpdateModifiers(update *types.Document) (bool, error) {
+	updateModifier := false
 	for _, updateOp := range update.Keys() {
 		switch updateOp {
 		case "$currentDate":
@@ -283,18 +396,25 @@ func checkAllModifiersSupported(update *types.Document) error {
 		case "$setOnInsert":
 			fallthrough
 		case "$unset":
-			// supported
+			fallthrough
+		case "$pop":
+			updateModifier = true
 		default:
-			return NewWriteErrorMsg(
-				ErrFailedToParse,
-				fmt.Sprintf(
-					"Unknown modifier: %s. Expected a valid update modifier or pipeline-style "+
-						"update specified as an array", updateOp,
-				),
-			)
+			if strings.HasPrefix(updateOp, "$") {
+				return false, NewWriteErrorMsg(
+					ErrFailedToParse,
+					fmt.Sprintf(
+						"Unknown modifier: %s. Expected a valid update modifier or pipeline-style "+
+							"update specified as an array", updateOp,
+					),
+				)
+			}
+
+			// In case the operator doesn't start with $, treats the update as a Replacement object
 		}
 	}
-	return nil
+
+	return updateModifier, nil
 }
 
 // checkConflictingChanges checks if there are the same keys in these documents and returns an error, if any.
@@ -406,19 +526,4 @@ func validateCurrentDateExpression(update *types.Document) error {
 	}
 
 	return nil
-}
-
-// TODO decide if we need it.
-var UpdateOperators = map[string]struct{}{}
-
-func init() {
-	for _, o := range []string{
-		"$currentDate",
-		"$set",
-		"$setOnInsert",
-		"$unset",
-		"$inc",
-	} {
-		UpdateOperators[o] = struct{}{}
-	}
 }
