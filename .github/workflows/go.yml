@@ -82,7 +82,7 @@ jobs:
         run: bin/task init
 
       - name: Regenerate and reformat
-        run: bin/task -p gen docs
+        run: bin/task gen
 
       - name: Wait for and setup environment
         run: bin/task env-setup
@@ -232,6 +232,8 @@ jobs:
         with:
           name: linux-logs
           path: /tmp/logs
+          retention-days: 14
+          if-no-files-found: error
 
       # we don't want them on CI
       - name: Clean test and fuzz caches
