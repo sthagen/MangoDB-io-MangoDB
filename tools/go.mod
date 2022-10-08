@@ -7,14 +7,14 @@ replace github.com/golangci/golangci-lint => github.com/FerretDB/golangci-lint v
 
 require (
 	github.com/BurntSushi/go-sumtype v0.0.0-20190304192233-fcb4a6205bdc
-	github.com/go-task/task/v3 v3.15.2
+	github.com/go-task/task/v3 v3.16.0
 	github.com/golangci/golangci-lint v1.47.2 // sync with GitHub Actions workflow
-	github.com/goreleaser/nfpm/v2 v2.19.1
+	github.com/goreleaser/nfpm/v2 v2.19.2
 	github.com/quasilyte/go-consistent v0.0.0-20220429160651-4e46040fbc82
 	github.com/reviewdog/reviewdog v0.14.1
 	golang.org/x/perf v0.0.0-20220920022801-e8d778a60d07
-	golang.org/x/tools v0.1.13-0.20220803210227-8b9a1fbdf5c3
-	golang.org/x/vuln v0.0.0-20220923181559-cbe0a6944b8b
+	golang.org/x/tools v0.1.13-0.20220928184430-f80e98464e27
+	golang.org/x/vuln v0.0.0-20221006005703-27389ae96df4
 	mvdan.cc/gofumpt v0.4.0
 )
 
@@ -235,7 +235,7 @@ require (
 	golang.org/x/exp v0.0.0-20220722155223-a9213eeb770e // indirect
 	golang.org/x/exp/typeparams v0.0.0-20220613132600-b0d781184e0d // indirect
 	golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4 // indirect
-	golang.org/x/net v0.0.0-20220722155237-a158d28d115b // indirect
+	golang.org/x/net v0.0.0-20220920203100-d0c6ba3f52d9 // indirect
 	golang.org/x/oauth2 v0.0.0-20220411215720-9780585627b5 // indirect
 	golang.org/x/sync v0.0.0-20220819030929-7fc1605a5dde // indirect
 	golang.org/x/sys v0.0.0-20220829200755-d48e67d00261 // indirect
