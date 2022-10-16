@@ -38,7 +38,8 @@ func (h *Handler) MsgDelete(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, 
 	if err := common.Unimplemented(document, "let"); err != nil {
 		return nil, err
 	}
-	common.Ignored(document, h.l, "writeConcern")
+
+	common.Ignored(document, h.L, "writeConcern")
 
 	var deletes *types.Array
 	if deletes, err = common.GetOptionalParam(document, "deletes", deletes); err != nil {
@@ -94,6 +95,8 @@ func (h *Handler) MsgDelete(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, 
 		if sp.Comment, err = common.GetOptionalParam(filter, "$comment", sp.Comment); err != nil {
 			return nil, err
 		}
+
+		sp.Filter = filter
 
 		del, err := h.execDelete(ctx, &sp, filter, limit)
 		if err == nil {
@@ -171,9 +174,9 @@ func (h *Handler) execDelete(ctx context.Context, sp *pgdb.SQLParam, filter *typ
 	resDocs := make([]*types.Document, 0, 16)
 
 	var deleted int32
-	err = h.pgPool.InTransaction(ctx, func(tx pgx.Tx) error {
+	err = h.PgPool.InTransaction(ctx, func(tx pgx.Tx) error {
 		// fetch current items from collection
-		fetchedChan, err := h.pgPool.QueryDocuments(ctx, tx, sp)
+		fetchedChan, err := h.PgPool.QueryDocuments(ctx, tx, sp)
 		if err != nil {
 			return err
 		}
@@ -239,7 +242,7 @@ func (h *Handler) delete(ctx context.Context, sp *pgdb.SQLParam, docs []*types.D
 	}
 
 	var rowsDeleted int64
-	err := h.pgPool.InTransaction(ctx, func(tx pgx.Tx) error {
+	err := h.PgPool.InTransaction(ctx, func(tx pgx.Tx) error {
 		var err error
 		rowsDeleted, err = pgdb.DeleteDocumentsByID(ctx, tx, sp, ids)
 		return err

@@ -39,15 +39,16 @@ func (h *Handler) MsgListDatabases(ctx context.Context, msg *wire.OpMsg) (*wire.
 		return nil, err
 	}
 
-	common.Ignored(document, h.l, "comment", "authorizedDatabases")
+	common.Ignored(document, h.L, "comment", "authorizedDatabases")
 
 	nameOnly, err := common.GetBoolOptionalParam(document, "nameOnly")
 	if err != nil {
 		return nil, err
 	}
 
+	var totalSize int64
 	var databases *types.Array
-	err = h.pgPool.InTransaction(ctx, func(tx pgx.Tx) error {
+	err = h.PgPool.InTransaction(ctx, func(tx pgx.Tx) error {
 		var databaseNames []string
 		var err error
 		databaseNames, err = pgdb.Databases(ctx, tx)
@@ -100,42 +101,38 @@ func (h *Handler) MsgListDatabases(ctx context.Context, msg *wire.OpMsg) (*wire.
 				}
 			}
 		}
-		return nil
+
+		if nameOnly {
+			return nil
+		}
+
+		return h.PgPool.QueryRow(ctx, "SELECT pg_database_size(current_database())").Scan(&totalSize)
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	if nameOnly {
-		var reply wire.OpMsg
+	var reply wire.OpMsg
+
+	switch {
+	case nameOnly:
 		err = reply.SetSections(wire.OpMsgSection{
 			Documents: []*types.Document{must.NotFail(types.NewDocument(
 				"databases", databases,
 				"ok", float64(1),
 			))},
 		})
-		if err != nil {
-			return nil, lazyerrors.Error(err)
-		}
-
-		return &reply, nil
+	default:
+		err = reply.SetSections(wire.OpMsgSection{
+			Documents: []*types.Document{must.NotFail(types.NewDocument(
+				"databases", databases,
+				"totalSize", totalSize,
+				"totalSizeMb", totalSize/1024/1024,
+				"ok", float64(1),
+			))},
+		})
 	}
 
-	var totalSize int64
-	err = h.pgPool.QueryRow(ctx, "SELECT pg_database_size(current_database())").Scan(&totalSize)
-	if err != nil {
-		return nil, err
-	}
-
-	var reply wire.OpMsg
-	err = reply.SetSections(wire.OpMsgSection{
-		Documents: []*types.Document{must.NotFail(types.NewDocument(
-			"databases", databases,
-			"totalSize", totalSize,
-			"totalSizeMb", totalSize/1024/1024,
-			"ok", float64(1),
-		))},
-	})
 	if err != nil {
 		return nil, lazyerrors.Error(err)
 	}

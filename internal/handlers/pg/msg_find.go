@@ -52,6 +52,7 @@ func (h *Handler) MsgFind(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, er
 	if err := common.Unimplemented(document, unimplementedFields...); err != nil {
 		return nil, err
 	}
+
 	ignoredFields := []string{
 		"hint",
 		"batchSize",
@@ -60,7 +61,7 @@ func (h *Handler) MsgFind(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, er
 		"max",
 		"min",
 	}
-	common.Ignored(document, h.l, ignoredFields...)
+	common.Ignored(document, h.L, ignoredFields...)
 
 	var filter, sort, projection *types.Document
 	if filter, err = common.GetOptionalParam(document, "filter", filter); err != nil {
@@ -92,14 +93,19 @@ func (h *Handler) MsgFind(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, er
 		}
 	}
 
-	var sp pgdb.SQLParam
+	sp := pgdb.SQLParam{
+		Filter: filter,
+	}
+
 	if sp.DB, err = common.GetRequiredParam[string](document, "$db"); err != nil {
 		return nil, err
 	}
+
 	collectionParam, err := document.Get(document.Command())
 	if err != nil {
 		return nil, err
 	}
+
 	var ok bool
 	if sp.Collection, ok = collectionParam.(string); !ok {
 		return nil, common.NewErrorMsg(
@@ -120,8 +126,8 @@ func (h *Handler) MsgFind(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, er
 	}
 
 	resDocs := make([]*types.Document, 0, 16)
-	err = h.pgPool.InTransaction(ctx, func(tx pgx.Tx) error {
-		fetchedChan, err := h.pgPool.QueryDocuments(ctx, tx, &sp)
+	err = h.PgPool.InTransaction(ctx, func(tx pgx.Tx) error {
+		fetchedChan, err := h.PgPool.QueryDocuments(ctx, tx, &sp)
 		if err != nil {
 			return err
 		}

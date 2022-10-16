@@ -50,7 +50,7 @@ func (h *Handler) MsgFindAndModify(ctx context.Context, msg *wire.OpMsg) (*wire.
 		"collation",
 		"hint",
 	}
-	common.Ignored(document, h.l, ignoredFields...)
+	common.Ignored(document, h.L, ignoredFields...)
 
 	params, err := common.PrepareFindAndModifyParams(document)
 	if err != nil {
@@ -68,15 +68,16 @@ func (h *Handler) MsgFindAndModify(ctx context.Context, msg *wire.OpMsg) (*wire.
 		DB:         params.DB,
 		Collection: params.Collection,
 		Comment:    params.Comment,
+		Filter:     params.Query,
 	}
 
 	// This is not very optimal as we need to fetch everything from the database to have a proper sort.
 	// We might consider rewriting it later.
 	var reply wire.OpMsg
-	err = h.pgPool.InTransaction(ctx, func(tx pgx.Tx) error {
+	err = h.PgPool.InTransaction(ctx, func(tx pgx.Tx) error {
 		resDocs := make([]*types.Document, 0, 16)
 
-		fetchedChan, err := h.pgPool.QueryDocuments(ctx, tx, &sqlParam)
+		fetchedChan, err := h.PgPool.QueryDocuments(ctx, tx, &sqlParam)
 		if err != nil {
 			return err
 		}

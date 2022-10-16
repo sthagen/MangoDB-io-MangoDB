@@ -42,12 +42,13 @@ func (h *Handler) MsgCount(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, e
 	if err := common.Unimplemented(document, unimplementedFields...); err != nil {
 		return nil, err
 	}
+
 	ignoredFields := []string{
 		"hint",
 		"readConcern",
 		"comment",
 	}
-	common.Ignored(document, h.l, ignoredFields...)
+	common.Ignored(document, h.L, ignoredFields...)
 
 	var filter *types.Document
 	if filter, err = common.GetOptionalParam(document, "query", filter); err != nil {
@@ -62,13 +63,16 @@ func (h *Handler) MsgCount(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, e
 	}
 
 	var sp pgdb.SQLParam
+
 	if sp.DB, err = common.GetRequiredParam[string](document, "$db"); err != nil {
 		return nil, err
 	}
+
 	collectionParam, err := document.Get(document.Command())
 	if err != nil {
 		return nil, err
 	}
+
 	var ok bool
 	if sp.Collection, ok = collectionParam.(string); !ok {
 		return nil, common.NewErrorMsg(
@@ -77,9 +81,11 @@ func (h *Handler) MsgCount(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, e
 		)
 	}
 
+	sp.Filter = filter
+
 	resDocs := make([]*types.Document, 0, 16)
-	err = h.pgPool.InTransaction(ctx, func(tx pgx.Tx) error {
-		fetchedChan, err := h.pgPool.QueryDocuments(ctx, tx, &sp)
+	err = h.PgPool.InTransaction(ctx, func(tx pgx.Tx) error {
+		fetchedChan, err := h.PgPool.QueryDocuments(ctx, tx, &sp)
 		if err != nil {
 			return err
 		}
