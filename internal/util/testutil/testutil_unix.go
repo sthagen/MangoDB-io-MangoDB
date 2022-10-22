@@ -12,35 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package tjson
+//go:build unix
+
+package testutil
 
 import (
-	"testing"
+	"context"
+	"os/signal"
 
-	"github.com/AlekSi/pointer"
+	"golang.org/x/sys/unix"
 )
 
-var boolTestCases = []testCase{{
-	name:   "false",
-	v:      pointer.To(boolType(false)),
-	schema: boolSchema,
-	j:      `false`,
-}, {
-	name:   "true",
-	v:      pointer.To(boolType(true)),
-	schema: boolSchema,
-	j:      `true`,
-}}
-
-func TestBool(t *testing.T) {
-	t.Parallel()
-	testJSON(t, boolTestCases, func() tjsontype { return new(boolType) })
-}
-
-func FuzzBool(f *testing.F) {
-	fuzzJSON(f, boolTestCases)
-}
-
-func BenchmarkBool(b *testing.B) {
-	benchmark(b, boolTestCases)
+// notifyTestsTermination installs a signal handler that cancels the context.
+func notifyTestsTermination(parent context.Context) (context.Context, context.CancelFunc) {
+	return signal.NotifyContext(parent, unix.SIGTERM, unix.SIGINT)
 }

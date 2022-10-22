@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package tjson
+package fjson
 
 import (
 	"testing"
@@ -20,32 +20,13 @@ import (
 	"github.com/AlekSi/pointer"
 )
 
-var timestampTestCases = []testCase{{
-	name:   "one",
-	v:      pointer.To(timestampType(1)),
-	j:      `{"$t":"1"}`,
-	schema: timestampSchema,
-}, {
-	name:   "zero",
-	v:      pointer.To(timestampType(0)),
-	j:      `{"$t":"0"}`,
-	schema: timestampSchema,
-}, {
-	name:   "EOF",
-	j:      `{`,
-	jErr:   `unexpected EOF`,
-	schema: timestampSchema,
+var nullTestCases = []testCase{{
+	name: "null",
+	v:    pointer.To(nullType{}),
+	j:    `null`,
 }}
 
-func TestTimestamp(t *testing.T) {
+func TestNull(t *testing.T) {
 	t.Parallel()
-	testJSON(t, timestampTestCases, func() tjsontype { return new(timestampType) })
-}
-
-func FuzzTimestamp(f *testing.F) {
-	fuzzJSON(f, timestampTestCases)
-}
-
-func BenchmarkTimestamp(b *testing.B) {
-	benchmark(b, timestampTestCases)
+	testJSON(t, nullTestCases, func() fjsontype { return new(nullType) })
 }
