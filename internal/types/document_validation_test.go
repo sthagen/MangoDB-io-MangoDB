@@ -63,6 +63,41 @@ func TestDocumentValidateData(t *testing.T) {
 			doc:    must.NotFail(NewDocument("foo", "bar")),
 			reason: errors.New(`invalid document: document must contain '_id' field`),
 		},
+		"Array": {
+			doc:    must.NotFail(NewDocument("_id", &Array{[]any{"foo", "bar"}})),
+			reason: errors.New("The '_id' value cannot be of type array"),
+		},
+		"Regex": {
+			doc:    must.NotFail(NewDocument("_id", Regex{Pattern: "regex$"})),
+			reason: errors.New("The '_id' value cannot be of type regex"),
+		},
+		"NestedArray": {
+			doc: must.NotFail(NewDocument(
+				"_id", "1",
+				"foo", must.NotFail(NewArray("bar", must.NotFail(NewArray("baz")))),
+			)),
+			reason: errors.New(`invalid value: { "foo": [ "bar", [ "baz" ] ] } (nested arrays are not supported)`),
+		},
+		"NestedDocumentNestedArray": {
+			doc: must.NotFail(NewDocument(
+				"_id", "1",
+				"foo", must.NotFail(NewDocument(
+					"bar", must.NotFail(NewArray("baz", must.NotFail(NewArray("qaz")))),
+				)),
+			)),
+			reason: errors.New(`invalid value: { "bar": [ "baz", [ "qaz" ] ] } (nested arrays are not supported)`),
+		},
+		"ArrayDocumentNestedArray": {
+			doc: must.NotFail(NewDocument(
+				"_id", "1",
+				"foo", must.NotFail(NewArray(
+					must.NotFail(NewDocument(
+						"bar", must.NotFail(NewArray("baz", must.NotFail(NewArray("qaz")))),
+					)),
+				)),
+			)),
+			reason: errors.New(`invalid value: { "bar": [ "baz", [ "qaz" ] ] } (nested arrays are not supported)`),
+		},
 	} {
 		name, tc := name, tc
 		t.Run(name, func(t *testing.T) {
