@@ -21,7 +21,6 @@ import (
 	"runtime"
 	"sort"
 	"strconv"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -871,7 +870,6 @@ func TestCommandsAdministrationServerStatusMetrics(t *testing.T) {
 			metricsPath:     types.NewPath([]string{"metrics", "commands", "update"}),
 			expectedNonZero: []string{"failed", "total"},
 		},
-		// TODO: https://github.com/FerretDB/FerretDB/issues/9
 	} {
 		name, tc := name, tc
 		t.Run(name, func(t *testing.T) {
@@ -911,6 +909,49 @@ func TestCommandsAdministrationServerStatusMetrics(t *testing.T) {
 			for _, expectedName := range tc.expectedNonZero {
 				assert.Contains(t, actualNotZeros, expectedName)
 			}
+		})
+	}
+}
+
+func TestCommandsAdministrationServerStatusFreeMonitoring(t *testing.T) {
+	// this test shouldn't be run in parallel, because it requires a specific state of the field which would be modified by the other tests.
+	s := setup.SetupWithOpts(t, &setup.SetupOpts{
+		DatabaseName: "admin",
+	})
+
+	for name, tc := range map[string]struct {
+		expectedStatus string
+		err            *mongo.CommandError
+		command        bson.D
+	}{
+		"Enable": {
+			command:        bson.D{{"setFreeMonitoring", 1}, {"action", "enable"}},
+			expectedStatus: "enabled",
+		},
+		"Disable": {
+			command:        bson.D{{"setFreeMonitoring", 1}, {"action", "disable"}},
+			expectedStatus: "disabled",
+		},
+	} {
+		name, tc := name, tc
+
+		t.Run(name, func(t *testing.T) {
+			res := s.Collection.Database().RunCommand(s.Ctx, tc.command)
+			require.NoError(t, res.Err())
+
+			var actual bson.D
+			err := s.Collection.Database().RunCommand(s.Ctx, bson.D{{"serverStatus", 1}}).Decode(&actual)
+			require.NoError(t, err)
+
+			doc := ConvertDocument(t, actual)
+
+			freeMonitoring, ok := must.NotFail(doc.Get("freeMonitoring")).(*types.Document)
+			assert.True(t, ok)
+
+			status, err := freeMonitoring.Get("state")
+			assert.NoError(t, err)
+
+			assert.Equal(t, tc.expectedStatus, status)
 		})
 	}
 }
@@ -963,8 +1004,10 @@ func TestCommandsAdministrationServerStatusStress(t *testing.T) {
 			// In both cases, we create a collection without a schema.
 			err := db.CreateCollection(ctx, collName, &opts)
 			if err != nil {
-				if strings.Contains(err.Error(), `support for field "validator" is not implemented yet`) ||
-					strings.Contains(err.Error(), `unknown top level operator: $tigrisSchemaString`) {
+				if errorTextContains(err,
+					`support for field "validator" is not implemented yet`,
+					`unknown top level operator: $tigrisSchemaString`,
+				) {
 					err = db.CreateCollection(ctx, collName)
 				}
 			}
@@ -1003,9 +1046,11 @@ func TestCommandsAdministrationWhatsMyURI(t *testing.T) {
 	databaseName := s.Collection.Database().Name()
 	collectionName := s.Collection.Name()
 
+	// only check port number on TCP connection, no need to check on Unix socket
+	isTCP := s.IsTCP(t)
+
 	// setup second client connection to check that `whatsmyuri` returns different ports
-	uri := fmt.Sprintf("mongodb://127.0.0.1:%d/", s.Port)
-	client2, err := mongo.Connect(s.Ctx, options.Client().ApplyURI(uri))
+	client2, err := mongo.Connect(s.Ctx, options.Client().ApplyURI(s.MongoDBURI))
 	require.NoError(t, err)
 	defer client2.Disconnect(s.Ctx)
 	collection2 := client2.Database(databaseName).Collection(collectionName)
@@ -1018,15 +1063,34 @@ func TestCommandsAdministrationWhatsMyURI(t *testing.T) {
 		require.NoError(t, err)
 
 		doc := ConvertDocument(t, actual)
-		assert.Equal(t, float64(1), must.NotFail(doc.Get("ok")))
+		keys := doc.Keys()
+		values := doc.Values()
 
-		// record ports to compare that they are not equal for two different clients.
-		_, port, err := net.SplitHostPort(must.NotFail(doc.Get("you")).(string))
-		require.NoError(t, err)
-		assert.NotEmpty(t, port)
-		ports = append(ports, port)
+		var ok float64
+		var you string
+
+		for i, k := range keys {
+			switch k {
+			case "ok":
+				ok = values[i].(float64)
+			case "you":
+				you = values[i].(string)
+			}
+		}
+
+		assert.Equal(t, float64(1), ok)
+
+		if isTCP {
+			// record ports to compare that they are not equal for two different clients.
+			_, port, err := net.SplitHostPort(you)
+			require.NoError(t, err)
+			assert.NotEmpty(t, port)
+			ports = append(ports, port)
+		}
 	}
 
-	require.Equal(t, 2, len(ports))
-	assert.NotEqual(t, ports[0], ports[1])
+	if isTCP {
+		require.Equal(t, 2, len(ports))
+		assert.NotEqual(t, ports[0], ports[1])
+	}
 }
