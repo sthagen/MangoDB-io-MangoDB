@@ -16,8 +16,6 @@ package pgdb
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"testing"
 
 	"github.com/jackc/pgx/v4"
@@ -25,11 +23,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/FerretDB/FerretDB/internal/types"
+	"github.com/FerretDB/FerretDB/internal/util/iterator"
 	"github.com/FerretDB/FerretDB/internal/util/must"
 	"github.com/FerretDB/FerretDB/internal/util/testutil"
 )
 
-func TestQueryDocuments(t *testing.T) {
+func TestGetDocuments(t *testing.T) {
 	t.Parallel()
 
 	ctx := testutil.Ctx(t)
@@ -40,131 +39,127 @@ func TestQueryDocuments(t *testing.T) {
 	setupDatabase(ctx, t, pool, databaseName)
 
 	err := pool.InTransaction(ctx, func(tx pgx.Tx) error {
-		if err := CreateDatabaseIfNotExists(ctx, tx, databaseName); err != nil && !errors.Is(err, ErrAlreadyExist) {
-			return err
-		}
-		return nil
+		return CreateDatabaseIfNotExists(ctx, tx, databaseName)
 	})
 	require.NoError(t, err)
 
-	cases := []struct {
-		name       string
-		collection string
-		documents  []*types.Document
+	t.Run("one-document", func(t *testing.T) {
+		t.Parallel()
 
-		// docsPerIteration represents how many documents should be fetched per each iteration,
-		// use len(docsPerIteration) as the amount of fetch iterations.
-		docsPerIteration []int
-	}{{
-		name:             "empty",
-		collection:       collectionName,
-		documents:        []*types.Document{},
-		docsPerIteration: []int{},
-	}, {
-		name:             "one",
-		collection:       collectionName + "_one",
-		documents:        []*types.Document{must.NotFail(types.NewDocument("_id", "foo", "id", "1"))},
-		docsPerIteration: []int{1},
-	}, {
-		name:       "two",
-		collection: collectionName + "_two",
-		documents: []*types.Document{
-			must.NotFail(types.NewDocument("_id", "foo", "id", "1")),
-			must.NotFail(types.NewDocument("_id", "foo", "id", "2")),
-		},
-		docsPerIteration: []int{2},
-	}, {
-		name:       "three",
-		collection: collectionName + "_three",
-		documents: []*types.Document{
-			must.NotFail(types.NewDocument("_id", "foo", "id", "1")),
-			must.NotFail(types.NewDocument("_id", "foo", "id", "2")),
-			must.NotFail(types.NewDocument("_id", "foo", "id", "3")),
-		},
-		docsPerIteration: []int{2, 1},
-	}}
+		collection := collectionName + "-one"
+		expectedDoc := must.NotFail(types.NewDocument("_id", "foo", "id", "1"))
 
-	for _, tc := range cases {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
-			tx, err := pool.Begin(ctx)
-			require.NoError(t, err)
-			defer tx.Rollback(ctx)
-
-			for _, doc := range tc.documents {
-				require.NoError(t, InsertDocument(ctx, pool, databaseName, tc.collection, doc))
-			}
-
-			sp := &SQLParam{DB: databaseName, Collection: tc.collection}
-			fetchedChan, err := pool.QueryDocuments(ctx, tx, sp)
-			require.NoError(t, err)
-
-			iter := 0
-			for {
-				fetched, ok := <-fetchedChan
-				if !ok {
-					break
-				}
-
-				assert.NoError(t, fetched.Err)
-				assert.Equal(t, tc.docsPerIteration[iter], len(fetched.Docs))
-				iter++
-			}
-			assert.Equal(t, len(tc.docsPerIteration), iter)
-
-			require.NoError(t, tx.Commit(ctx))
-		})
-	}
-
-	// Special case: cancel context before reading from channel.
-	t.Run("cancel_context", func(t *testing.T) {
 		tx, err := pool.Begin(ctx)
 		require.NoError(t, err)
 		defer tx.Rollback(ctx)
 
-		for i := 1; i <= FetchedChannelBufSize*FetchedSliceCapacity+1; i++ {
-			require.NoError(t, InsertDocument(ctx, pool, databaseName, collectionName+"_cancel",
-				must.NotFail(types.NewDocument("_id", "foo", "id", fmt.Sprintf("%d", i))),
-			))
-		}
+		require.NoError(t, InsertDocument(ctx, pool, databaseName, collection, expectedDoc))
 
-		sp := &SQLParam{DB: databaseName, Collection: collectionName + "_cancel"}
-		ctx, cancel := context.WithCancel(ctx)
-		fetchedChan, err := pool.QueryDocuments(ctx, tx, sp)
-		cancel()
+		sp := &SQLParam{DB: databaseName, Collection: collection}
+		it, err := pool.GetDocuments(ctx, tx, sp)
 		require.NoError(t, err)
+		require.NotNil(t, it)
 
-		<-ctx.Done()
-		countDocs := 0
-		for {
-			fetched, ok := <-fetchedChan
-			if !ok {
-				break
-			}
+		defer it.Close()
 
-			countDocs += len(fetched.Docs)
-		}
-		require.Less(t, countDocs, FetchedChannelBufSize*FetchedSliceCapacity+1)
+		iter, doc, err := it.Next()
+		assert.NoError(t, err)
+		assert.Equal(t, uint32(0), iter)
+		assert.Equal(t, expectedDoc, doc)
 
-		require.ErrorIs(t, tx.Rollback(ctx), context.Canceled)
+		iter, doc, err = it.Next()
+		assert.Equal(t, iterator.ErrIteratorDone, err)
+		assert.Equal(t, uint32(0), iter)
+		assert.Nil(t, doc)
+
+		it.Close()
+		require.NoError(t, tx.Commit(ctx))
 	})
 
-	// Special case: querying a non-existing collection.
-	t.Run("non-existing_collection", func(t *testing.T) {
+	t.Run("cancel-context", func(t *testing.T) {
+		t.Parallel()
+
+		collection := collectionName + "-two"
+		expectedDocs := []*types.Document{
+			must.NotFail(types.NewDocument("_id", "bar", "id", "1")),
+			must.NotFail(types.NewDocument("_id", "foo", "id", "2")),
+		}
+
 		tx, err := pool.Begin(ctx)
 		require.NoError(t, err)
 		defer tx.Rollback(ctx)
 
-		sp := &SQLParam{DB: databaseName, Collection: collectionName + "_non-existing"}
-		fetchedChan, err := pool.QueryDocuments(ctx, tx, sp)
-		require.NoError(t, err)
-		res, ok := <-fetchedChan
-		require.False(t, ok)
-		require.Nil(t, res.Docs)
-		require.Nil(t, res.Err)
+		require.NoError(t, InsertDocument(ctx, pool, databaseName, collection, expectedDocs[0]))
+		require.NoError(t, InsertDocument(ctx, pool, databaseName, collection, expectedDocs[1]))
 
+		ctxTest, cancel := context.WithCancel(ctx)
+		sp := &SQLParam{DB: databaseName, Collection: collection}
+		it, err := pool.GetDocuments(ctxTest, tx, sp)
+		require.NoError(t, err)
+		require.NotNil(t, it)
+
+		defer it.Close()
+
+		iter, doc, err := it.Next()
+		assert.NoError(t, err)
+		assert.Equal(t, uint32(0), iter)
+		assert.Equal(t, expectedDocs[0], doc)
+
+		cancel()
+		iter, doc, err = it.Next()
+		assert.Equal(t, context.Canceled, err)
+		assert.Equal(t, uint32(0), iter)
+		assert.Nil(t, doc)
+
+		it.Close()
+		require.NoError(t, tx.Commit(ctx))
+	})
+
+	t.Run("empty-collection", func(t *testing.T) {
+		t.Parallel()
+
+		collection := collectionName + "-empty"
+
+		tx, err := pool.Begin(ctx)
+		require.NoError(t, err)
+		defer tx.Rollback(ctx)
+
+		require.NoError(t, CreateCollection(ctx, tx, databaseName, collection))
+
+		sp := &SQLParam{DB: databaseName, Collection: collection}
+		it, err := pool.GetDocuments(ctx, tx, sp)
+		require.NoError(t, err)
+		require.NotNil(t, it)
+
+		defer it.Close()
+
+		iter, doc, err := it.Next()
+		assert.Equal(t, iterator.ErrIteratorDone, err)
+		assert.Equal(t, uint32(0), iter)
+		assert.Nil(t, doc)
+
+		it.Close()
+		require.NoError(t, tx.Commit(ctx))
+	})
+
+	t.Run("non-existent-collection", func(t *testing.T) {
+		t.Parallel()
+
+		tx, err := pool.Begin(ctx)
+		require.NoError(t, err)
+		defer tx.Rollback(ctx)
+
+		sp := &SQLParam{DB: databaseName, Collection: collectionName + "-non-existent"}
+		it, err := pool.GetDocuments(ctx, tx, sp)
+		require.NoError(t, err)
+		require.NotNil(t, it)
+
+		iter, doc, err := it.Next()
+		assert.Equal(t, iterator.ErrIteratorDone, err)
+		assert.Equal(t, uint32(0), iter)
+		assert.Nil(t, doc)
+
+		it.Close()
 		require.NoError(t, tx.Commit(ctx))
 	})
 }

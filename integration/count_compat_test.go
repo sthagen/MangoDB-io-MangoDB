@@ -21,26 +21,28 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo/options"
 
 	"github.com/FerretDB/FerretDB/integration/setup"
+	"github.com/FerretDB/FerretDB/integration/shareddata"
 )
 
-// queryCompatTestCase describes query compatibility test case.
-type queryCompatTestCase struct {
+// countCompatTestCase describes count compatibility test case.
+type countCompatTestCase struct {
 	filter     bson.D                   // required
-	sort       bson.D                   // defaults to `bson.D{{"_id", 1}}`
-	projection bson.D                   // nil for leaving projection unset
 	resultType compatTestCaseResultType // defaults to nonEmptyResult
 }
 
-// testQueryCompat tests query compatibility test cases.
-func testQueryCompat(t *testing.T, testCases map[string]queryCompatTestCase) {
+// testCountCompat tests count compatibility test cases.
+func testCountCompat(t *testing.T, testCases map[string]countCompatTestCase) {
 	t.Helper()
 
 	// Use shared setup because find queries can't modify data.
 	// TODO Use read-only user. https://github.com/FerretDB/FerretDB/issues/1025
-	ctx, targetCollections, compatCollections := setup.SetupCompat(t)
+	s := setup.SetupCompatWithOpts(t, &setup.SetupCompatOpts{
+		Providers:                shareddata.AllProviders(),
+		AddNonExistentCollection: true,
+	})
+	ctx, targetCollections, compatCollections := s.Ctx, s.TargetCollections, s.CompatCollections
 
 	for name, tc := range testCases {
 		name, tc := name, tc
@@ -52,16 +54,6 @@ func testQueryCompat(t *testing.T, testCases map[string]queryCompatTestCase) {
 			filter := tc.filter
 			require.NotNil(t, filter, "filter should be set")
 
-			sort := tc.sort
-			if sort == nil {
-				sort = bson.D{{"_id", 1}}
-			}
-			opts := options.Find().SetSort(sort)
-
-			if tc.projection != nil {
-				opts = opts.SetProjection(tc.projection)
-			}
-
 			var nonEmptyResults bool
 			for i := range targetCollections {
 				targetCollection := targetCollections[i]
@@ -69,33 +61,32 @@ func testQueryCompat(t *testing.T, testCases map[string]queryCompatTestCase) {
 				t.Run(targetCollection.Name(), func(t *testing.T) {
 					t.Helper()
 
-					targetCursor, targetErr := targetCollection.Find(ctx, filter, opts)
-					compatCursor, compatErr := compatCollection.Find(ctx, filter, opts)
-
-					if targetCursor != nil {
-						defer targetCursor.Close(ctx)
-					}
-					if compatCursor != nil {
-						defer compatCursor.Close(ctx)
-					}
+					// RunCommand must be used to test the count command.
+					// It's not possible to use CountDocuments because it calls aggregation.
+					var targetRes, compatRes bson.D
+					targetErr := targetCollection.Database().RunCommand(ctx, bson.D{
+						{"count", targetCollection.Name()},
+						{"query", filter},
+					}).Decode(&targetRes)
+					compatErr := compatCollection.Database().RunCommand(ctx, bson.D{
+						{"count", compatCollection.Name()},
+						{"query", filter},
+					}).Decode(&compatRes)
 
 					if targetErr != nil {
 						t.Logf("Target error: %v", targetErr)
-						AssertMatchesCommandError(t, compatErr, targetErr)
-
+						targetErr = UnsetRaw(t, targetErr)
+						compatErr = UnsetRaw(t, compatErr)
+						assert.Equal(t, compatErr, targetErr)
 						return
 					}
 					require.NoError(t, compatErr, "compat error; target returned no error")
 
-					var targetRes, compatRes []bson.D
-					require.NoError(t, targetCursor.All(ctx, &targetRes))
-					require.NoError(t, compatCursor.All(ctx, &compatRes))
+					t.Logf("Compat (expected) result: %v", compatRes)
+					t.Logf("Target (actual)   result: %v", targetRes)
+					assert.Equal(t, compatRes, targetRes)
 
-					t.Logf("Compat (expected) IDs: %v", CollectIDs(t, compatRes))
-					t.Logf("Target (actual)   IDs: %v", CollectIDs(t, targetRes))
-					AssertEqualDocumentsSlice(t, compatRes, targetRes)
-
-					if len(targetRes) > 0 || len(compatRes) > 0 {
+					if targetRes != nil || compatRes != nil {
 						nonEmptyResults = true
 					}
 				})
@@ -113,25 +104,10 @@ func testQueryCompat(t *testing.T, testCases map[string]queryCompatTestCase) {
 	}
 }
 
-func TestQueryCompat(t *testing.T) {
+func TestCountCompat(t *testing.T) {
 	t.Parallel()
 
-	testCases := map[string]queryCompatTestCase{
-		"BadSortValue": {
-			filter:     bson.D{},
-			sort:       bson.D{{"v", 11}},
-			resultType: emptyResult,
-		},
-		"BadSortZeroValue": {
-			filter:     bson.D{},
-			sort:       bson.D{{"v", 0}},
-			resultType: emptyResult,
-		},
-		"BadSortNullValue": {
-			filter:     bson.D{},
-			sort:       bson.D{{"v", nil}},
-			resultType: emptyResult,
-		},
+	testCases := map[string]countCompatTestCase{
 		"Empty": {
 			filter: bson.D{},
 		},
@@ -141,11 +117,10 @@ func TestQueryCompat(t *testing.T) {
 		"IDObjectID": {
 			filter: bson.D{{"_id", primitive.NilObjectID}},
 		},
-		"UnknownFilterOperator": {
-			filter:     bson.D{{"v", bson.D{{"$someUnknownOperator", 42}}}},
-			resultType: emptyResult,
+		"IDNotExists": {
+			filter: bson.D{{"_id", "count-id-not-exists"}},
 		},
 	}
 
-	testQueryCompat(t, testCases)
+	testCountCompat(t, testCases)
 }

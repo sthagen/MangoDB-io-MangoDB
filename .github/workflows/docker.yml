@@ -44,6 +44,11 @@ on:
   schedule:
     - cron: "42 2 * * *" # after Go workflow
 
+# Do not run this workflow in parallel for any PR change
+# to prevent concurrent pushes for the same Docker image tag.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref }}
+
 env:
   GOPATH: /home/runner/go
   GOCACHE: /home/runner/go/cache
@@ -54,7 +59,7 @@ env:
 jobs:
   build:
     name: Build image
-    runs-on: ubuntu-20.04
+    runs-on: [ubuntu-22.04, trusted]
 
     if: >
       github.event_name != 'pull_request_target' ||

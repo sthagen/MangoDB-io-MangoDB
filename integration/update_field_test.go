@@ -86,7 +86,8 @@ func TestUpdateFieldCurrentDate(t *testing.T) {
 
 	t.Run("currentDate", func(t *testing.T) {
 		// maxDifference is a maximum amount of seconds can differ the value in placeholder from actual value
-		maxDifference := time.Duration(3 * time.Minute)
+		// TODO Make duration lower https://github.com/FerretDB/FerretDB/issues/1347
+		maxDifference := time.Duration(4 * time.Minute)
 
 		now := primitive.NewDateTimeFromTime(time.Now().UTC())
 		nowTimestamp := primitive.Timestamp{T: uint32(time.Now().UTC().Unix()), I: uint32(0)}
@@ -297,16 +298,6 @@ func TestUpdateFieldInc(t *testing.T) {
 				update:   bson.D{{"$inc", bson.D{{"v", float64(42.13)}}}},
 				expected: bson.D{{"_id", "double"}, {"v", float64(84.26)}},
 			},
-			"DoubleIncrementNaN": {
-				id:       "double",
-				update:   bson.D{{"$inc", bson.D{{"v", math.NaN()}}}},
-				expected: bson.D{{"_id", "double"}, {"v", math.NaN()}},
-			},
-			"DoubleIncrementPlusInfinity": {
-				id:       "double-nan",
-				update:   bson.D{{"$inc", bson.D{{"v", math.Inf(+1)}}}},
-				expected: bson.D{{"_id", "double-nan"}, {"v", math.NaN()}},
-			},
 			"DoubleNegativeIncrement": {
 				id:       "double",
 				update:   bson.D{{"$inc", bson.D{{"v", float64(-42.13)}}}},
@@ -336,16 +327,6 @@ func TestUpdateFieldInc(t *testing.T) {
 				id:       "double",
 				update:   bson.D{{"$inc", bson.D{{"v", math.MaxFloat64}}}},
 				expected: bson.D{{"_id", "double"}, {"v", math.MaxFloat64}},
-				stat: &mongo.UpdateResult{
-					MatchedCount:  1,
-					ModifiedCount: 1,
-					UpsertedCount: 0,
-				},
-			},
-			"DoubleDoubleNaNIncrement": {
-				id:       "double",
-				update:   bson.D{{"$inc", bson.D{{"v", math.NaN()}}}},
-				expected: bson.D{{"_id", "double"}, {"v", math.NaN()}},
 				stat: &mongo.UpdateResult{
 					MatchedCount:  1,
 					ModifiedCount: 1,
@@ -389,26 +370,6 @@ func TestUpdateFieldInc(t *testing.T) {
 				stat: &mongo.UpdateResult{
 					MatchedCount:  1,
 					ModifiedCount: 0,
-					UpsertedCount: 0,
-				},
-			},
-			"DoubleNaNDoublePositiveIncrement": {
-				id:       "double-nan",
-				update:   bson.D{{"$inc", bson.D{{"v", 42.13}}}},
-				expected: bson.D{{"_id", "double-nan"}, {"v", math.NaN()}},
-				stat: &mongo.UpdateResult{
-					MatchedCount:  1,
-					ModifiedCount: 1,
-					UpsertedCount: 0,
-				},
-			},
-			"DoubleNaNDoubleNegativeIncrement": {
-				id:       "double-nan",
-				update:   bson.D{{"$inc", bson.D{{"v", -42.13}}}},
-				expected: bson.D{{"_id", "double-nan"}, {"v", math.NaN()}},
-				stat: &mongo.UpdateResult{
-					MatchedCount:  1,
-					ModifiedCount: 1,
 					UpsertedCount: 0,
 				},
 			},
@@ -714,16 +675,6 @@ func TestUpdateFieldSet(t *testing.T) {
 				UpsertedCount: 0,
 			},
 		},
-		"NaN": {
-			id:       "double",
-			update:   bson.D{{"$set", bson.D{{"v", math.NaN()}}}},
-			expected: bson.D{{"_id", "double"}, {"v", math.NaN()}},
-			stat: &mongo.UpdateResult{
-				MatchedCount:  1,
-				ModifiedCount: 1,
-				UpsertedCount: 0,
-			},
-		},
 		"EmptyArray": {
 			id:       "double",
 			update:   bson.D{{"$set", bson.D{{"v", bson.A{}}}}},
@@ -756,8 +707,8 @@ func TestUpdateFieldSet(t *testing.T) {
 		},
 		"SetTwoFields": {
 			id:       "int32-zero",
-			update:   bson.D{{"$set", bson.D{{"foo", int32(12)}, {"v", math.NaN()}}}},
-			expected: bson.D{{"_id", "int32-zero"}, {"v", math.NaN()}, {"foo", int32(12)}},
+			update:   bson.D{{"$set", bson.D{{"foo", int32(12)}, {"v", nil}}}},
+			expected: bson.D{{"_id", "int32-zero"}, {"v", nil}, {"foo", int32(12)}},
 			stat: &mongo.UpdateResult{
 				MatchedCount:  1,
 				ModifiedCount: 1,
@@ -768,16 +719,6 @@ func TestUpdateFieldSet(t *testing.T) {
 			id:       "int32",
 			update:   bson.D{{"$set", bson.D{{"v", int32(42)}}}},
 			expected: bson.D{{"_id", "int32"}, {"v", int32(42)}},
-			stat: &mongo.UpdateResult{
-				MatchedCount:  1,
-				ModifiedCount: 0,
-				UpsertedCount: 0,
-			},
-		},
-		"SetSameValueNan": {
-			id:       "double-nan",
-			update:   bson.D{{"$set", bson.D{{"v", math.NaN()}}}},
-			expected: bson.D{{"_id", "double-nan"}, {"v", math.NaN()}},
 			stat: &mongo.UpdateResult{
 				MatchedCount:  1,
 				ModifiedCount: 0,
@@ -929,16 +870,6 @@ func TestUpdateFieldSetOnInsert(t *testing.T) {
 				Code: 9,
 				Message: "Modifiers operate on fields but we found type double instead. " +
 					"For example: {$mod: {<field>: ...}} not {$setOnInsert: 43.13}",
-			},
-			alt: "Modifiers operate on fields but we found another type instead",
-		},
-		"ErrNaN": {
-			id:     "double-nan",
-			update: bson.D{{"$setOnInsert", math.NaN()}},
-			err: &mongo.WriteError{
-				Code: 9,
-				Message: "Modifiers operate on fields but we found type double instead. " +
-					"For example: {$mod: {<field>: ...}} not {$setOnInsert: nan.0}",
 			},
 			alt: "Modifiers operate on fields but we found another type instead",
 		},
@@ -1124,16 +1055,16 @@ func TestUpdateFieldMixed(t *testing.T) {
 			filter: bson.D{{"_id", "test"}},
 			update: bson.D{
 				{"$set", bson.D{{"foo", int32(12)}}},
-				{"$setOnInsert", bson.D{{"v", math.NaN()}}},
+				{"$setOnInsert", bson.D{{"v", nil}}},
 			},
-			expected: bson.D{{"_id", "test"}, {"foo", int32(12)}, {"v", math.NaN()}},
+			expected: bson.D{{"_id", "test"}, {"foo", int32(12)}, {"v", nil}},
 		},
 		"SetIncSetOnInsert": {
 			filter: bson.D{{"_id", "test"}},
 			update: bson.D{
 				{"$set", bson.D{{"foo", int32(12)}}},
 				{"$inc", bson.D{{"foo", int32(1)}}},
-				{"$setOnInsert", bson.D{{"v", math.NaN()}}},
+				{"$setOnInsert", bson.D{{"v", nil}}},
 			},
 			err: &mongo.WriteError{
 				Code:    40,
