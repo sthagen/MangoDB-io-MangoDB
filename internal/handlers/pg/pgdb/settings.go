@@ -72,7 +72,7 @@ func createSettingsTable(ctx context.Context, tx pgx.Tx, db string) error {
 		case pgerrcode.UniqueViolation, pgerrcode.DuplicateObject:
 			// https://www.postgresql.org/message-id/CA+TgmoZAdYVtwBfp1FL2sMZbiHCWT4UPrzRLNnX1Nb30Ku3-gg@mail.gmail.com
 			// Reproducible by integration tests.
-			return ErrAlreadyExist
+			return newTransactionConflictError(err)
 		default:
 			return lazyerrors.Errorf("pgdb.createSettingsTable: %w", err)
 		}
@@ -167,12 +167,7 @@ func getSettingsTable(ctx context.Context, tx pgx.Tx, db string, lock bool) (*ty
 		return nil, lazyerrors.Error(err)
 	}
 
-	settings, ok := doc.(*types.Document)
-	if !ok {
-		return nil, lazyerrors.Errorf("invalid settings document: %v", doc)
-	}
-
-	return settings, nil
+	return doc, nil
 }
 
 // setTableInSettings sets the table name for given collection in settings table.

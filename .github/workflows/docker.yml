@@ -33,7 +33,7 @@ name: Docker
 on:
   pull_request_target:
     types:
-      - labeled
+      - labeled # for `trusted` label
       - unlabeled
       - opened
       - reopened
@@ -59,7 +59,7 @@ env:
 jobs:
   build:
     name: Build image
-    runs-on: [ubuntu-22.04, trusted]
+    runs-on: [faster, trusted]
 
     if: >
       github.event_name != 'pull_request_target' ||
@@ -115,7 +115,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build Docker image ${{ steps.extract.outputs.ghcr }}
-        run: bin/task docker-push DOCKER_IMAGE=${{ steps.extract.outputs.ghcr }}
+        run: bin/task docker-push DOCKER_IMAGES=${{ steps.extract.outputs.ghcr }}
 
       - name: Check dirty
         run: |

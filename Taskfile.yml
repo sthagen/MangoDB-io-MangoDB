@@ -316,13 +316,37 @@ tasks:
     cmds:
       - docker compose exec postgres psql -U postgres -d ferretdb
 
+  # mongosh runs both tasks and ignores errors.
+  # mongosh-plain works with FerretDB and PLAIN authentication, while mongosh-scram works with MongoDB.
   mongosh:
     desc: "Run MongoDB shell (`mongosh`)"
     cmds:
+      - task: mongosh-plain
+      - task: mongosh-scram
+
+  mongosh-plain:
+    cmds:
+      - cmd: >
+          docker compose exec mongodb mongosh
+          'mongodb://username:password@host.docker.internal:27018/?authMechanism=PLAIN&tls=true&tlsCAFile=/etc/certs/rootCA.pem&heartbeatFrequencyMS=300000'
+          --verbose --eval 'disableTelemetry()' --shell
+        ignore_error: true
+
+  mongosh-scram:
+    cmds:
+      - cmd: >
+          docker compose exec mongodb mongosh
+          'mongodb://username:password@host.docker.internal:27018/?tls=true&tlsCAFile=/etc/certs/rootCA.pem&heartbeatFrequencyMS=300000'
+          --verbose --eval 'disableTelemetry()' --shell
+        ignore_error: true
+
+  mongo-test:
+    desc: "Run legacy MongoDB shell (`mongo`) with test script"
+    cmds:
       - >
-        docker compose exec mongodb mongosh
-        'mongodb://host.docker.internal:27018/test?tls=true&tlsCAFile=/etc/certs/rootCA.pem&heartbeatFrequencyMS=300000'
-        --verbose --eval 'disableTelemetry()' --shell /mongosh/test.js
+        docker compose run --rm legacy-mongo-shell
+        'mongodb://host.docker.internal:27017/test?heartbeatFrequencyMS=300000'
+        /legacy-mongo-shell/test.js
 
   docker-init:
     cmds:
@@ -345,39 +369,35 @@ tasks:
       COMMIT:
         sh: cat internal/util/version/gen/commit.txt
 
-  docker-cache:
-    deps: [gen-version]
-    cmds:
-      - >
-        docker buildx build --builder=ferretdb
-        --build-arg VERSION={{.VERSION}}
-        --build-arg COMMIT={{.COMMIT}}
-        --build-arg RACEFLAG={{.RACEFLAG}}
-        --platform=linux/arm/v7,linux/arm64,linux/amd64
-        .
-    vars:
-      VERSION:
-        sh: cat internal/util/version/gen/version.txt
-      COMMIT:
-        sh: cat internal/util/version/gen/commit.txt
-
   docker-push:
     deps: [gen-version]
     cmds:
-      - test {{.DOCKER_IMAGE}}
       - >
         docker buildx build --builder=ferretdb
         --build-arg VERSION={{.VERSION}}
         --build-arg COMMIT={{.COMMIT}}
         --build-arg RACEFLAG={{.RACEFLAG}}
         --platform=linux/arm/v7,linux/arm64,linux/amd64
-        --tag={{.DOCKER_IMAGE}}
+        {{range splitList "," .DOCKER_IMAGES}}--tag={{trim .}} {{end -}}
         --push .
     vars:
       VERSION:
         sh: cat internal/util/version/gen/version.txt
       COMMIT:
         sh: cat internal/util/version/gen/commit.txt
+
+  docker-push-release:
+    cmds:
+      - task: docker-push
+        vars:
+          DOCKER_IMAGES: >
+              ferretdb/ferretdb:latest,
+              ferretdb/ferretdb:{{trimPrefix "v" .VERSION}},
+              ghcr.io/ferretdb/ferretdb:latest,
+              ghcr.io/ferretdb/ferretdb:{{trimPrefix "v" .VERSION}}
+    vars:
+      VERSION:
+        sh: cat internal/util/version/gen/version.txt
 
   packages:
     cmds:
