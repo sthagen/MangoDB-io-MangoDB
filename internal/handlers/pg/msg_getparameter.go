@@ -16,9 +16,11 @@ package pg
 
 import (
 	"context"
+	"errors"
 
 	"github.com/FerretDB/FerretDB/internal/handlers/common"
 	"github.com/FerretDB/FerretDB/internal/types"
+	"github.com/FerretDB/FerretDB/internal/util/iterator"
 	"github.com/FerretDB/FerretDB/internal/util/lazyerrors"
 	"github.com/FerretDB/FerretDB/internal/util/must"
 	"github.com/FerretDB/FerretDB/internal/wire"
@@ -41,16 +43,6 @@ func (h *Handler) MsgGetParameter(ctx context.Context, msg *wire.OpMsg) (*wire.O
 			"value", int32(5),
 			"settableAtRuntime", true,
 			"settableAtStartup", true,
-		)),
-		"tlsMode", must.NotFail(types.NewDocument(
-			"value", "preferTLS",
-			"settableAtRuntime", true,
-			"settableAtStartup", false,
-		)),
-		"sslMode", must.NotFail(types.NewDocument(
-			"value", "disabled",
-			"settableAtRuntime", true,
-			"settableAtStartup", false,
 		)),
 		"quiet", must.NotFail(types.NewDocument(
 			"value", false,
@@ -87,31 +79,38 @@ func (h *Handler) MsgGetParameter(ctx context.Context, msg *wire.OpMsg) (*wire.O
 func selectUnit(document, resDB *types.Document, showDetails, allParameters bool) (doc *types.Document, err error) {
 	doc = must.NotFail(types.NewDocument())
 
-	keys := resDB.Keys()
-	if !allParameters {
-		keys = document.Keys()
-	}
+	iter := resDB.Iterator()
+	defer iter.Close()
 
-	for _, k := range keys {
+	for {
+		k, v, err := iter.Next()
+		if err != nil {
+			if errors.Is(err, iterator.ErrIteratorDone) {
+				break
+			}
+
+			return nil, err
+		}
+
 		if k == "getParameter" || k == "comment" || k == "$db" {
 			continue
 		}
-		item, err := resDB.Get(k)
-		if err != nil {
+
+		if !allParameters && !document.Has(k) {
 			continue
 		}
 
 		if !showDetails {
-			if itm, ok := item.(*types.Document); ok {
+			if itm, ok := v.(*types.Document); ok {
 				val, err := itm.Get("value")
 				if err != nil {
 					continue
 				}
-				item = val
+				v = val
 			}
 		}
 
-		doc.Set(k, item)
+		doc.Set(k, v)
 	}
 
 	if doc.Len() < 1 {

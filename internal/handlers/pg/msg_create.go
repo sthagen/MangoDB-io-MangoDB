@@ -31,6 +31,11 @@ import (
 
 // MsgCreate implements HandlerInterface.
 func (h *Handler) MsgCreate(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, error) {
+	dbPool, err := h.DBPool(ctx)
+	if err != nil {
+		return nil, lazyerrors.Error(err)
+	}
+
 	document, err := msg.Document()
 	if err != nil {
 		return nil, lazyerrors.Error(err)
@@ -74,30 +79,28 @@ func (h *Handler) MsgCreate(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, 
 		return nil, err
 	}
 
-	err = h.PgPool.InTransactionRetry(ctx, func(tx pgx.Tx) error {
-		if err := pgdb.CreateDatabaseIfNotExists(ctx, tx, db); err != nil {
-			switch {
-			case errors.Is(pgdb.ErrInvalidDatabaseName, err):
-				msg := fmt.Sprintf("Invalid namespace: %s.%s", db, collection)
-				return common.NewCommandErrorMsg(common.ErrInvalidNamespace, msg)
-			default:
-				return lazyerrors.Error(err)
-			}
-		}
+	err = dbPool.InTransactionRetry(ctx, func(tx pgx.Tx) error {
+		err = pgdb.CreateCollection(ctx, tx, db, collection)
 
-		if err := pgdb.CreateCollection(ctx, tx, db, collection); err != nil {
-			switch {
-			case errors.Is(err, pgdb.ErrAlreadyExist):
-				msg := fmt.Sprintf("Collection %s.%s already exists.", db, collection)
-				return common.NewCommandErrorMsg(common.ErrNamespaceExists, msg)
-			case errors.Is(err, pgdb.ErrInvalidTableName):
-				msg := fmt.Sprintf("Invalid collection name: '%s.%s'", db, collection)
-				return common.NewCommandErrorMsg(common.ErrInvalidNamespace, msg)
-			default:
-				return lazyerrors.Error(err)
-			}
+		switch {
+		case err == nil:
+			return nil
+
+		case errors.Is(err, pgdb.ErrAlreadyExist):
+			msg := fmt.Sprintf("Collection %s.%s already exists.", db, collection)
+			return common.NewCommandErrorMsg(common.ErrNamespaceExists, msg)
+
+		case errors.Is(err, pgdb.ErrInvalidDatabaseName):
+			msg := fmt.Sprintf("Invalid namespace: %s.%s", db, collection)
+			return common.NewCommandErrorMsg(common.ErrInvalidNamespace, msg)
+
+		case errors.Is(err, pgdb.ErrInvalidCollectionName):
+			msg := fmt.Sprintf("Invalid collection name: '%s.%s'", db, collection)
+			return common.NewCommandErrorMsg(common.ErrInvalidNamespace, msg)
+
+		default:
+			return lazyerrors.Error(err)
 		}
-		return nil
 	})
 	if err != nil {
 		return nil, err

@@ -319,11 +319,6 @@ func TestCommandsAdministrationGetParameter(t *testing.T) {
 					{"settableAtRuntime", true},
 					{"settableAtStartup", true},
 				},
-				"tlsMode": bson.D{
-					{"value", "preferTLS"},
-					{"settableAtRuntime", true},
-					{"settableAtStartup", false},
-				},
 				"ok": float64(1),
 			},
 		},
@@ -440,11 +435,6 @@ func TestCommandsAdministrationGetParameter(t *testing.T) {
 					{"settableAtRuntime", true},
 					{"settableAtStartup", true},
 				},
-				"tlsMode": bson.D{
-					{"value", "preferTLS"},
-					{"settableAtRuntime", true},
-					{"settableAtStartup", false},
-				},
 				"ok": float64(1),
 			},
 		},
@@ -455,11 +445,6 @@ func TestCommandsAdministrationGetParameter(t *testing.T) {
 					{"value", false},
 					{"settableAtRuntime", true},
 					{"settableAtStartup", true},
-				},
-				"tlsMode": bson.D{
-					{"value", "preferTLS"},
-					{"settableAtRuntime", true},
-					{"settableAtStartup", false},
 				},
 				"ok": float64(1),
 			},
@@ -493,11 +478,6 @@ func TestCommandsAdministrationGetParameter(t *testing.T) {
 					{"value", false},
 					{"settableAtRuntime", true},
 					{"settableAtStartup", true},
-				},
-				"tlsMode": bson.D{
-					{"value", "preferTLS"},
-					{"settableAtRuntime", true},
-					{"settableAtStartup", false},
 				},
 				"ok": float64(1),
 			},
@@ -559,8 +539,6 @@ func TestCommandsAdministrationGetParameter(t *testing.T) {
 }
 
 func TestCommandsAdministrationBuildInfo(t *testing.T) {
-	setup.SkipForTigris(t)
-
 	t.Parallel()
 	ctx, collection := setup.Setup(t)
 
@@ -586,7 +564,6 @@ func TestCommandsAdministrationBuildInfo(t *testing.T) {
 	assert.Equal(t, int32(0), must.NotFail(versionArray.Get(1)))
 
 	assert.Equal(t, int32(strconv.IntSize), must.NotFail(doc.Get("bits")))
-	assert.False(t, must.NotFail(doc.Get("debug")).(bool))
 
 	assert.Equal(t, int32(16777216), must.NotFail(doc.Get("maxBsonObjectSize")))
 	_, ok = must.NotFail(doc.Get("buildEnvironment")).(*types.Document)
@@ -998,4 +975,23 @@ func TestCommandsAdministrationServerStatusStress(t *testing.T) {
 	close(start)
 
 	wg.Wait()
+}
+
+func TestCommandsAdministrationCurrentOp(t *testing.T) {
+	t.Parallel()
+
+	s := setup.SetupWithOpts(t, &setup.SetupOpts{
+		DatabaseName: "admin",
+	})
+
+	var res bson.D
+	err := s.Collection.Database().RunCommand(s.Ctx,
+		bson.D{{"currentOp", int32(1)}},
+	).Decode(&res)
+	require.NoError(t, err)
+
+	doc := ConvertDocument(t, res)
+
+	_, ok := must.NotFail(doc.Get("inprog")).(*types.Array)
+	assert.True(t, ok)
 }

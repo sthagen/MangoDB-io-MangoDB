@@ -306,7 +306,7 @@ type updateCurrentDateCompatTestCase struct {
 func testUpdateCurrentDateCompat(t *testing.T, testCases map[string]updateCurrentDateCompatTestCase) {
 	t.Helper()
 
-	maxDifference := 4 * time.Minute
+	maxDifference := 2 * time.Minute
 
 	for name, tc := range testCases {
 		name, tc := name, tc
@@ -428,7 +428,8 @@ func TestUpdateCompat(t *testing.T) {
 }
 
 func TestUpdateCompatArray(t *testing.T) {
-	setup.SkipForTigrisWithReason(t, "https://github.com/FerretDB/FerretDB/issues/908")
+	// TODO Add Tigris-compatible array to shareddata.Composites
+	setup.SkipForTigrisWithReason(t, "https://github.com/FerretDB/FerretDB/issues/1704")
 
 	t.Parallel()
 

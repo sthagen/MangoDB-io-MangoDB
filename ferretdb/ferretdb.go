@@ -13,6 +13,10 @@
 // limitations under the License.
 
 // Package ferretdb provides embeddable FerretDB implementation.
+//
+// See [build/version package documentation] for information about Go build tags that affect this package.
+//
+// [build/version package documentation]: https://pkg.go.dev/github.com/FerretDB/FerretDB/build/version
 package ferretdb
 
 import (
@@ -23,6 +27,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/FerretDB/FerretDB/build/version"
 	"github.com/FerretDB/FerretDB/internal/clientconn"
 	"github.com/FerretDB/FerretDB/internal/clientconn/connmetrics"
 	"github.com/FerretDB/FerretDB/internal/handlers/registry"
@@ -38,7 +43,7 @@ type Config struct {
 	Handler string
 
 	// PostgreSQL connection string for `pg` handler.
-	PostgreSQLURL string // For example: `postgres://username:password@hostname:5432/ferretdb`.
+	PostgreSQLURL string // For example: `postgres://hostname:5432/ferretdb`.
 
 	// Tigris parameters for `tigris` handler.
 	// See https://docs.tigrisdata.com/overview/authentication
@@ -63,11 +68,14 @@ type ListenerConfig struct {
 	// If empty, TLS listener is disabled.
 	TLS string
 
-	// TLSCertFile path.
+	// Server certificate path.
 	TLSCertFile string
 
-	// TLSKeyFile path.
+	// Server key path.
 	TLSKeyFile string
+
+	// Root CA certificate path.
+	TLSCAFile string
 }
 
 // FerretDB represents an instance of embeddable FerretDB implementation.
@@ -116,6 +124,7 @@ func New(config *Config) (*FerretDB, error) {
 			TLS:         config.Listener.TLS,
 			TLSCertFile: config.Listener.TLSCertFile,
 			TLSKeyFile:  config.Listener.TLSKeyFile,
+			TLSCAFile:   config.Listener.TLSCAFile,
 		},
 		Mode:    clientconn.NormalMode,
 		Metrics: metrics,
@@ -174,6 +183,7 @@ func (f *FerretDB) MongoDBURI() string {
 			Path:   "/",
 		}
 	case f.config.Listener.Unix != "":
+		// MongoDB really wants Unix socket path in the host part of the URI
 		u = &url.URL{
 			Scheme: "mongodb",
 			Host:   f.l.Unix().String(),
@@ -192,6 +202,11 @@ var logger *zap.Logger
 // Initialize the global logger there to avoid creating too many issues for zap users that initialize it in their
 // `main()` functions. It is still not a full solution; eventually, we should remove the usage of the global logger.
 func init() {
-	logging.Setup(zap.ErrorLevel, "")
+	l := zap.ErrorLevel
+	if version.Get().DebugBuild {
+		l = zap.DebugLevel
+	}
+
+	logging.Setup(l, "")
 	logger = zap.L()
 }

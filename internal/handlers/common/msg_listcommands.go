@@ -49,7 +49,7 @@ var Commands = map[string]command{
 		Help:    "Returns a summary of the build information.",
 		Handler: handlers.Interface.MsgBuildInfo,
 	},
-	"buildInfo": { // both `buildinfo` and `buildInfo` are valid
+	"buildInfo": {
 		Help:    "Returns a summary of the build information.",
 		Handler: handlers.Interface.MsgBuildInfo,
 	},
@@ -78,6 +78,10 @@ var Commands = map[string]command{
 		Help:    "Creates indexes on a collection.",
 		Handler: handlers.Interface.MsgCreateIndexes,
 	},
+	"currentOp": {
+		Help:    "Returns information about operations currently in progress.",
+		Handler: handlers.Interface.MsgCurrentOp,
+	},
 	"dataSize": {
 		Help:    "Returns the size of the collection in bytes.",
 		Handler: handlers.Interface.MsgDataSize,
@@ -94,6 +98,10 @@ var Commands = map[string]command{
 		Help:    "Deletes documents matched by the query.",
 		Handler: handlers.Interface.MsgDelete,
 	},
+	"distinct": {
+		Help:    "Returns an array of distinct values for the given field.",
+		Handler: handlers.Interface.MsgDistinct,
+	},
 	"drop": {
 		Help:    "Drops the collection.",
 		Handler: handlers.Interface.MsgDrop,
@@ -109,6 +117,10 @@ var Commands = map[string]command{
 	"find": {
 		Help:    "Returns documents matched by the query.",
 		Handler: handlers.Interface.MsgFind,
+	},
+	"findandmodify": {
+		Help:    "Inserts, updates, or deletes, and returns a document matched by the query.",
+		Handler: handlers.Interface.MsgFindAndModify,
 	},
 	"findAndModify": {
 		Help:    "Inserts, updates, or deletes, and returns a document matched by the query.",
@@ -146,7 +158,7 @@ var Commands = map[string]command{
 		Help:    "Returns the role of the FerretDB instance.",
 		Handler: handlers.Interface.MsgIsMaster,
 	},
-	"isMaster": { // both `ismaster` and `isMaster` are valid
+	"isMaster": {
 		Help:    "Returns the role of the FerretDB instance.",
 		Handler: handlers.Interface.MsgIsMaster,
 	},
@@ -201,7 +213,18 @@ func MsgListCommands(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, error) 
 	cmdList := must.NotFail(types.NewDocument())
 	names := maps.Keys(Commands)
 	sort.Strings(names)
+
+	ignoreLowercaseCmds := map[string]struct{}{
+		"buildinfo":     {},
+		"findandmodify": {},
+		"ismaster":      {},
+	}
+
 	for _, name := range names {
+		if _, ok := ignoreLowercaseCmds[name]; ok {
+			continue
+		}
+
 		cmdList.Set(name, must.NotFail(types.NewDocument(
 			"help", Commands[name].Help,
 		)))

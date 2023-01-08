@@ -28,7 +28,8 @@ import (
 )
 
 func TestQueryComparisonCompatImplicit(t *testing.T) {
-	setup.SkipForTigrisWithReason(t, "https://github.com/FerretDB/FerretDB/issues/908")
+	// TODO Add Tigris-compatible array to shareddata.Composites
+	setup.SkipForTigrisWithReason(t, "https://github.com/FerretDB/FerretDB/issues/1704")
 
 	t.Parallel()
 
@@ -120,7 +121,8 @@ func TestQueryComparisonCompatImplicit(t *testing.T) {
 }
 
 func TestQueryComparisonCompatEq(t *testing.T) {
-	setup.SkipForTigrisWithReason(t, "https://github.com/FerretDB/FerretDB/issues/908")
+	// TODO Add Tigris-compatible array to shareddata.Composites
+	setup.SkipForTigrisWithReason(t, "https://github.com/FerretDB/FerretDB/issues/1704")
 
 	t.Parallel()
 
@@ -286,7 +288,8 @@ func TestQueryComparisonCompatEq(t *testing.T) {
 }
 
 func TestQueryComparisonCompatGt(t *testing.T) {
-	setup.SkipForTigrisWithReason(t, "https://github.com/FerretDB/FerretDB/issues/908")
+	// TODO Add Tigris-compatible array to shareddata.Composites
+	setup.SkipForTigrisWithReason(t, "https://github.com/FerretDB/FerretDB/issues/1704")
 
 	t.Parallel()
 
@@ -406,7 +409,8 @@ func TestQueryComparisonCompatGt(t *testing.T) {
 }
 
 func TestQueryComparisonCompatGte(t *testing.T) {
-	setup.SkipForTigrisWithReason(t, "https://github.com/FerretDB/FerretDB/issues/908")
+	// TODO Add Tigris-compatible array to shareddata.Composites
+	setup.SkipForTigrisWithReason(t, "https://github.com/FerretDB/FerretDB/issues/1704")
 
 	t.Parallel()
 
@@ -523,7 +527,8 @@ func TestQueryComparisonCompatGte(t *testing.T) {
 }
 
 func TestQueryComparisonCompatLt(t *testing.T) {
-	setup.SkipForTigrisWithReason(t, "https://github.com/FerretDB/FerretDB/issues/908")
+	// TODO Add Tigris-compatible array to shareddata.Composites
+	setup.SkipForTigrisWithReason(t, "https://github.com/FerretDB/FerretDB/issues/1704")
 
 	t.Parallel()
 
@@ -638,8 +643,7 @@ func TestQueryComparisonCompatLt(t *testing.T) {
 			filter: bson.D{{"v", bson.D{{"$lt", int64(42)}}}},
 		},
 		"Int64Min": {
-			filter:     bson.D{{"v", bson.D{{"$lt", int64(math.MinInt64)}}}},
-			resultType: emptyResult,
+			filter: bson.D{{"v", bson.D{{"$lt", int64(math.MinInt64)}}}},
 		},
 		"Int64Big": {
 			filter: bson.D{{"v", bson.D{{"$lt", int64(2<<60 + 1)}}}},
@@ -650,7 +654,8 @@ func TestQueryComparisonCompatLt(t *testing.T) {
 }
 
 func TestQueryComparisonCompatLte(t *testing.T) {
-	setup.SkipForTigrisWithReason(t, "https://github.com/FerretDB/FerretDB/issues/908")
+	// TODO Add Tigris-compatible array to shareddata.Composites
+	setup.SkipForTigrisWithReason(t, "https://github.com/FerretDB/FerretDB/issues/1704")
 
 	t.Parallel()
 
@@ -767,8 +772,6 @@ func TestQueryComparisonCompatLte(t *testing.T) {
 }
 
 func TestQueryComparisonCompatNin(t *testing.T) {
-	setup.SkipForTigrisWithReason(t, "https://github.com/FerretDB/FerretDB/issues/908")
-
 	t.Parallel()
 
 	var scalarDataTypesFilter bson.A
@@ -809,8 +812,6 @@ func TestQueryComparisonCompatNin(t *testing.T) {
 }
 
 func TestQueryComparisonCompatIn(t *testing.T) {
-	setup.SkipForTigrisWithReason(t, "https://github.com/FerretDB/FerretDB/issues/908")
-
 	t.Parallel()
 
 	var scalarDataTypesFilter bson.A
@@ -851,8 +852,6 @@ func TestQueryComparisonCompatIn(t *testing.T) {
 }
 
 func TestQueryComparisonCompatNe(t *testing.T) {
-	setup.SkipForTigrisWithReason(t, "https://github.com/FerretDB/FerretDB/issues/908")
-
 	t.Parallel()
 
 	testCases := map[string]queryCompatTestCase{
