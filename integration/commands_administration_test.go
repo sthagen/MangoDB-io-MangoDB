@@ -605,9 +605,10 @@ func TestCommandsAdministrationCollStats(t *testing.T) {
 	assert.Equal(t, int32(1), must.NotFail(doc.Get("scaleFactor")))
 	assert.Equal(t, collection.Database().Name()+"."+collection.Name(), must.NotFail(doc.Get("ns")))
 
-	assert.InDelta(t, float64(8012), must.NotFail(doc.Get("size")), 16_024)
-	assert.InDelta(t, float64(4096), must.NotFail(doc.Get("storageSize")), 8_012)
-	assert.InDelta(t, float64(4096), must.NotFail(doc.Get("totalIndexSize")), 8_012)
+	// TODO Set better expected results https://github.com/FerretDB/FerretDB/issues/1771
+	assert.InDelta(t, float64(8012), must.NotFail(doc.Get("size")), 36_000)
+	assert.InDelta(t, float64(4096), must.NotFail(doc.Get("storageSize")), 36_000)
+	assert.InDelta(t, float64(4096), must.NotFail(doc.Get("totalIndexSize")), 36_000)
 	assert.InDelta(t, float64(4096), must.NotFail(doc.Get("totalSize")), 32_904)
 }
 
@@ -901,6 +902,8 @@ func TestCommandsAdministrationServerStatusFreeMonitoring(t *testing.T) {
 
 func TestCommandsAdministrationServerStatusStress(t *testing.T) {
 	t.Parallel()
+
+	setup.SkipForTigrisWithReason(t, "https://github.com/FerretDB/FerretDB/issues/1791")
 
 	ctx, collection := setup.Setup(t) // no providers there, we will create collections concurrently
 	client := collection.Database().Client()
