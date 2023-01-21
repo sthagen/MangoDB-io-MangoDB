@@ -27,6 +27,11 @@ import (
 
 // MsgListCollections implements HandlerInterface.
 func (h *Handler) MsgListCollections(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, error) {
+	dbPool, err := h.DBPool(ctx)
+	if err != nil {
+		return nil, lazyerrors.Error(err)
+	}
+
 	document, err := msg.Document()
 	if err != nil {
 		return nil, lazyerrors.Error(err)
@@ -52,7 +57,7 @@ func (h *Handler) MsgListCollections(ctx context.Context, msg *wire.OpMsg) (*wir
 		return nil, err
 	}
 
-	names, err := h.db.Driver.UseDatabase(db).ListCollections(ctx)
+	names, err := dbPool.Driver.UseDatabase(db).ListCollections(ctx)
 	if err != nil {
 		return nil, lazyerrors.Error(err)
 	}
@@ -75,9 +80,7 @@ func (h *Handler) MsgListCollections(ctx context.Context, msg *wire.OpMsg) (*wir
 			continue
 		}
 
-		if err = collections.Append(d); err != nil {
-			return nil, lazyerrors.Error(err)
-		}
+		collections.Append(d)
 	}
 
 	var reply wire.OpMsg

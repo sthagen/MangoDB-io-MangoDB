@@ -182,6 +182,7 @@ func setupLogger(stateProvider *state.Provider) *zap.Logger {
 		zap.String("commit", info.Commit),
 		zap.String("branch", info.Branch),
 		zap.Bool("dirty", info.Dirty),
+		zap.String("package", info.Package),
 		zap.Bool("debugBuild", info.DebugBuild),
 		zap.Any("buildEnvironment", info.BuildEnvironment.Map()),
 	}
@@ -239,6 +240,7 @@ func run() {
 		fmt.Fprintln(os.Stdout, "commit:", info.Commit)
 		fmt.Fprintln(os.Stdout, "branch:", info.Branch)
 		fmt.Fprintln(os.Stdout, "dirty:", info.Dirty)
+		fmt.Fprintln(os.Stdout, "package:", info.Package)
 		fmt.Fprintln(os.Stdout, "debugBuild:", info.DebugBuild)
 
 		return
@@ -309,14 +311,13 @@ func run() {
 	defer h.Close()
 
 	l := clientconn.NewListener(&clientconn.NewListenerOpts{
-		Listener: clientconn.ListenerOpts{
-			Addr:        cli.Listen.Addr,
-			Unix:        cli.Listen.Unix,
-			TLS:         cli.Listen.TLS,
-			TLSCertFile: cli.Listen.TLSCertFile,
-			TLSKeyFile:  cli.Listen.TLSKeyFile,
-			TLSCAFile:   cli.Listen.TLSCAFile,
-		},
+		TCP:         cli.Listen.Addr,
+		Unix:        cli.Listen.Unix,
+		TLS:         cli.Listen.TLS,
+		TLSCertFile: cli.Listen.TLSCertFile,
+		TLSKeyFile:  cli.Listen.TLSKeyFile,
+		TLSCAFile:   cli.Listen.TLSCAFile,
+
 		ProxyAddr:      cli.ProxyAddr,
 		Mode:           clientconn.Mode(cli.Mode),
 		Metrics:        metrics,

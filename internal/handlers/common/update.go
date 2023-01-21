@@ -100,14 +100,29 @@ func UpdateDocument(doc, update *types.Document) (bool, error) {
 				return false, err
 			}
 
-		case "$pop":
-			changed, err = processPopFieldExpression(doc, updateV.(*types.Document))
+		case "$mul":
+			var mulChanged bool
+
+			if mulChanged, err = processMulFieldExpression(doc, updateV); err != nil {
+				return false, err
+			}
+
+			changed = changed || mulChanged
+
+		case "$rename":
+			changed, err = processRenameFieldExpression(doc, updateV.(*types.Document))
 			if err != nil {
 				return false, err
 			}
 
-		case "$rename":
-			changed, err = processRenameFieldExpression(doc, updateV.(*types.Document))
+		case "$pop":
+			changed, err = processPopArrayUpdateExpression(doc, updateV.(*types.Document))
+			if err != nil {
+				return false, err
+			}
+
+		case "$push":
+			changed, err = processPushArrayUpdateExpression(doc, updateV.(*types.Document))
 			if err != nil {
 				return false, err
 			}
@@ -166,8 +181,8 @@ func processSetFieldExpression(doc, setDoc *types.Document, setOnInsert bool) (b
 		path := types.NewPathFromString(setKey)
 
 		if doc.HasByPath(path) {
-			result := types.Compare(setValue, must.NotFail(doc.GetByPath(path)))
-			if result == types.Equal {
+			docValue := must.NotFail(doc.GetByPath(path))
+			if types.Identical(setValue, docValue) {
 				continue
 			}
 		}
@@ -177,66 +192,11 @@ func processSetFieldExpression(doc, setDoc *types.Document, setOnInsert bool) (b
 			continue
 		}
 
-		err := doc.SetByPath(path, setValue)
-		if err != nil {
-			return false, err
-		}
-
-		changed = true
-	}
-
-	return changed, nil
-}
-
-// processPopFieldExpression changes document according to $pop operator.
-// If the document was changed it returns true.
-func processPopFieldExpression(doc *types.Document, update *types.Document) (bool, error) {
-	var changed bool
-
-	for _, key := range update.Keys() {
-		popValueRaw := must.NotFail(update.Get(key))
-
-		popValue, err := GetWholeNumberParam(popValueRaw)
-		if err != nil {
-			return false, NewWriteErrorMsg(ErrFailedToParse, fmt.Sprintf(`Expected a number in: %s: "%v"`, key, popValueRaw))
-		}
-
-		if popValue != 1 && popValue != -1 {
-			return false, NewWriteErrorMsg(ErrFailedToParse, fmt.Sprintf("$pop expects 1 or -1, found: %d", popValue))
-		}
-
-		path := types.NewPathFromString(key)
-
-		if !doc.HasByPath(path) {
-			continue
-		}
-
-		val, err := doc.GetByPath(path)
-		if err != nil {
-			return false, err
-		}
-
-		array, ok := val.(*types.Array)
-		if !ok {
+		if err := doc.SetByPath(path, setValue); err != nil {
 			return false, NewWriteErrorMsg(
-				ErrTypeMismatch,
-				fmt.Sprintf("Path '%s' contains an element of non-array type '%s'", key, AliasFromType(val)),
+				ErrUnsuitableValueType,
+				err.Error(),
 			)
-		}
-
-		if array.Len() == 0 {
-			continue
-		}
-
-		if popValue == -1 {
-			array.Remove(0)
-		} else {
-			array.Remove(array.Len() - 1)
-		}
-
-		err = doc.SetByPath(path, array)
-		if err != nil {
-			return false, err
 		}
 
 		changed = true
@@ -284,9 +244,8 @@ func processRenameFieldExpression(doc *types.Document, update *types.Document) (
 		doc.RemoveByPath(sourcePath)
 
 		// Set new path with old value
-		err = doc.SetByPath(targetPath, val)
-		if err != nil {
-			return changed, err
+		if err := doc.SetByPath(targetPath, val); err != nil {
+			return false, lazyerrors.Error(err)
 		}
 
 		changed = true
@@ -320,8 +279,7 @@ func processIncFieldExpression(doc *types.Document, updateV any) (bool, error) {
 			}
 
 			// $inc sets the field if it does not exist.
-			err := doc.SetByPath(path, incValue)
-			if err != nil {
+			if err := doc.SetByPath(path, incValue); err != nil {
 				return false, NewWriteErrorMsg(
 					ErrUnsuitableValueType,
 					err.Error(),
@@ -340,12 +298,8 @@ func processIncFieldExpression(doc *types.Document, updateV any) (bool, error) {
 
 		incremented, err := addNumbers(incValue, docValue)
 		if err == nil {
-			err := doc.SetByPath(path, incremented)
-			if err != nil {
-				return false, NewWriteErrorMsg(
-					ErrUnsuitableValueType,
-					fmt.Sprintf(`Cannot create field in element {%s: %v}`, path.Prefix(), docValue),
-				)
+			if err = doc.SetByPath(path, incremented); err != nil {
+				return false, lazyerrors.Error(err)
 			}
 
 			result := types.Compare(docValue, incremented)
@@ -493,6 +447,147 @@ func processMinFieldExpression(doc *types.Document, updateV any) (bool, error) {
 	return changed, nil
 }
 
+// processMulFieldExpression updates document according to $mul operator.
+// If the document was changed it returns true.
+func processMulFieldExpression(doc *types.Document, updateV any) (bool, error) {
+	mulDoc, ok := updateV.(*types.Document)
+	if !ok {
+		return false, NewWriteErrorMsg(
+			ErrFailedToParse,
+			fmt.Sprintf(`Modifiers operate on fields but we found type %[1]s instead. `+
+				`For example: {$mod: {<field>: ...}} not {$rename: %[1]s}`,
+				AliasFromType(updateV),
+			),
+		)
+	}
+
+	var changed bool
+
+	for _, mulKey := range mulDoc.Keys() {
+		mulValue := must.NotFail(mulDoc.Get(mulKey))
+
+		path := types.NewPathFromString(mulKey)
+
+		if !doc.HasByPath(path) {
+			// $mul sets the field to zero if the field does not exist.
+			switch mulValue.(type) {
+			case float64:
+				mulValue = float64(0)
+			case int32:
+				mulValue = int32(0)
+			case int64:
+				mulValue = int64(0)
+			default:
+				return false, NewWriteErrorMsg(
+					ErrTypeMismatch,
+					fmt.Sprintf(`Cannot multiply with non-numeric argument: {%s: %#v}`, mulKey, mulValue),
+				)
+			}
+
+			err := doc.SetByPath(path, mulValue)
+			if err != nil {
+				return false, NewWriteErrorMsg(
+					ErrUnsuitableValueType,
+					err.Error(),
+				)
+			}
+
+			changed = true
+
+			continue
+		}
+
+		var err error
+
+		docValue, err := doc.GetByPath(path)
+		if err != nil {
+			return false, err
+		}
+
+		var multiplied any
+		multiplied, err = multiplyNumbers(mulValue, docValue)
+
+		switch {
+		case err == nil:
+			if multiplied, ok := multiplied.(float64); ok && math.IsInf(multiplied, 0) {
+				return false, NewCommandErrorMsg(
+					ErrBadValue,
+					fmt.Sprintf("update produces invalid value: { %q: %f } "+
+						"(update operations that produce infinity values are not allowed)", path, multiplied,
+					),
+				)
+			}
+
+			err = doc.SetByPath(path, multiplied)
+			if err != nil {
+				return false, NewWriteErrorMsg(
+					ErrUnsuitableValueType,
+					fmt.Sprintf(`Cannot create field in element {%s: %v}`, path.Prefix(), docValue),
+				)
+			}
+
+			// A change from int32(0) to int64(0) is considered changed.
+			// Hence, do not use types.Compare(docValue, multiplied) because
+			// it will equate int32(0) == int64(0).
+			if docValue == multiplied {
+				continue
+			}
+
+			changed = true
+
+			continue
+
+		case errors.Is(err, errUnexpectedLeftOpType):
+			return false, NewWriteErrorMsg(
+				ErrTypeMismatch,
+				fmt.Sprintf(
+					`Cannot multiply with non-numeric argument: {%s: %#v}`,
+					mulKey,
+					mulValue,
+				),
+			)
+		case errors.Is(err, errUnexpectedRightOpType):
+			k := mulKey
+			if path.Len() > 1 {
+				k = path.Suffix()
+			}
+
+			return false, NewWriteErrorMsg(
+				ErrTypeMismatch,
+				fmt.Sprintf(
+					`Cannot apply $mul to a value of non-numeric type. `+
+						`{_id: %s} has the field '%s' of non-numeric type %s`,
+					types.FormatAnyValue(must.NotFail(doc.Get("_id"))),
+					k,
+					AliasFromType(docValue),
+				),
+			)
+		case errors.Is(err, errLongExceeded):
+			return false, NewWriteErrorMsg(
+				ErrBadValue,
+				fmt.Sprintf(
+					`Failed to apply $mul operations to current value ((NumberLong)%d) for document {_id: "%s"}`,
+					docValue,
+					must.NotFail(doc.Get("_id")),
+				),
+			)
+		case errors.Is(err, errIntExceeded):
+			return false, NewWriteErrorMsg(
+				ErrBadValue,
+				fmt.Sprintf(
+					`Failed to apply $mul operations to current value ((NumberInt)%d) for document {_id: "%s"}`,
+					docValue,
+					must.NotFail(doc.Get("_id")),
+				),
+			)
+		default:
+			return false, err
+		}
+	}
+
+	return changed, nil
+}
+
 // processCurrentDateFieldExpression changes document according to $currentDate operator.
 // If the document was changed it returns true.
 func processCurrentDateFieldExpression(doc *types.Document, currentDateVal any) (bool, error) {
@@ -541,7 +636,7 @@ func ValidateUpdateOperators(update *types.Document) error {
 		return err
 	}
 
-	_, err = extractValueFromUpdateOperator("$currentDate", update)
+	currentDate, err := extractValueFromUpdateOperator("$currentDate", update)
 	if err != nil {
 		return err
 	}
@@ -551,12 +646,17 @@ func ValidateUpdateOperators(update *types.Document) error {
 		return err
 	}
 
-	_, err = extractValueFromUpdateOperator("$max", update)
+	max, err := extractValueFromUpdateOperator("$max", update)
 	if err != nil {
 		return err
 	}
 
-	_, err = extractValueFromUpdateOperator("$min", update)
+	min, err := extractValueFromUpdateOperator("$min", update)
+	if err != nil {
+		return err
+	}
+
+	mul, err := extractValueFromUpdateOperator("$mul", update)
 	if err != nil {
 		return err
 	}
@@ -566,17 +666,12 @@ func ValidateUpdateOperators(update *types.Document) error {
 		return err
 	}
 
-	_, err = extractValueFromUpdateOperator("$unset", update)
+	unset, err := extractValueFromUpdateOperator("$unset", update)
 	if err != nil {
 		return err
 	}
 
-	_, err = extractValueFromUpdateOperator("$setOnInsert", update)
-	if err != nil {
-		return err
-	}
-
-	_, err = extractValueFromUpdateOperator("$pop", update)
+	setOnInsert, err := extractValueFromUpdateOperator("$setOnInsert", update)
 	if err != nil {
 		return err
 	}
@@ -586,7 +681,23 @@ func ValidateUpdateOperators(update *types.Document) error {
 		return err
 	}
 
+	pop, err := extractValueFromUpdateOperator("$pop", update)
+	if err != nil {
+		return err
+	}
+
+	push, err := extractValueFromUpdateOperator("$push", update)
+	if err != nil {
+		return err
+	}
+
 	if err = checkConflictingChanges(set, inc); err != nil {
+		return err
+	}
+
+	if err = checkConflictingOperators(
+		mul, currentDate, inc, min, max, set, setOnInsert, unset, pop, push,
+	); err != nil {
 		return err
 	}
 
@@ -601,35 +712,21 @@ func ValidateUpdateOperators(update *types.Document) error {
 	return nil
 }
 
-// HasSupportedUpdateModifiers checks that update document contains only modifiers that are supported.
+// HasSupportedUpdateModifiers checks that update document contains supported update operators.
+// If no update operators are found it returns false.
+// If update document contains unsupported update operators it returns an error.
 func HasSupportedUpdateModifiers(update *types.Document) (bool, error) {
-	updateModifier := false
 	for _, updateOp := range update.Keys() {
 		switch updateOp {
-		case "$currentDate":
-			fallthrough
-		case "$inc":
-			fallthrough
-		case "$max":
-			fallthrough
-		case "$min":
-			fallthrough
-		case "$set":
-			fallthrough
-		case "$setOnInsert":
-			fallthrough
-		case "$unset":
-			fallthrough
-		case "$pop":
-			fallthrough
-		case "$rename":
-			updateModifier = true
-		case "$mul":
-			return false, NewCommandErrorMsgWithArgument(
-				ErrNotImplemented,
-				fmt.Sprintf("update operator %s is not implemented", updateOp),
-				updateOp,
-			)
+		case // field update operators:
+			"$currentDate",
+			"$inc", "$min", "$max", "$mul",
+			"$rename",
+			"$set", "$setOnInsert", "$unset",
+
+			// array update operators:
+			"$pop", "$push":
+			return true, nil
 		default:
 			if strings.HasPrefix(updateOp, "$") {
 				return false, NewWriteErrorMsg(
@@ -645,7 +742,29 @@ func HasSupportedUpdateModifiers(update *types.Document) (bool, error) {
 		}
 	}
 
-	return updateModifier, nil
+	return false, nil
+}
+
+// checkConflictingOperators checks if there are the same keys in these documents and returns an error, if any.
+func checkConflictingOperators(a *types.Document, bs ...*types.Document) error {
+	if a == nil {
+		return nil
+	}
+
+	for _, key := range a.Keys() {
+		for _, b := range bs {
+			if b != nil && b.Has(key) {
+				return NewWriteErrorMsg(
+					ErrConflictingUpdateOperators,
+					fmt.Sprintf(
+						"Updating the path '%[1]s' would create a conflict at '%[1]s'", key,
+					),
+				)
+			}
+		}
+	}
+
+	return nil
 }
 
 // checkConflictingChanges checks if there are the same keys in these documents and returns an error, if any.

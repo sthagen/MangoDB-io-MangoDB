@@ -83,12 +83,12 @@ sidebar_position: 1
 The following operators and modifiers are available in the `update` and `findAndModify` commands.
 
 | Operator          | Modifier    | Status | Comments                                                 |
-| ----------------- | ----------- | ------ | -------------------------------------------------------- |
+| ----------------- | ----------- | ------ |----------------------------------------------------------|
 | `$currentDate`    |             | ✅      |                                                          |
 | `$inc`            |             | ✅      |                                                          |
 | `$min`            |             | ✅      |                                                          |
 | `$max`            |             | ✅      |                                                          |
-| `$mul`            |             | ⚠️      | [Issue](https://github.com/FerretDB/FerretDB/issues/625) |
+| `$mul`            |             | ✅      |                                                          |
 | `$rename`         |             | ✅      |                                                          |
 | `$set`            |             | ✅      |                                                          |
 | `$setOnInsert`    |             | ✅      |                                                          |
@@ -99,7 +99,7 @@ The following operators and modifiers are available in the `update` and `findAnd
 | `$addToSet`       |             | ⚠️      | [Issue](https://github.com/FerretDB/FerretDB/issues/825) |
 | `$pop`            |             | ✅      |                                                          |
 | `$pull`           |             | ⚠️      | [Issue](https://github.com/FerretDB/FerretDB/issues/826) |
-| `$push`           |             | ⚠️      | [Issue](https://github.com/FerretDB/FerretDB/issues/503) |
+| `$push`           |             | ✅️      |                                                          |
 | `$pullAll`        |             | ⚠️      | [Issue](https://github.com/FerretDB/FerretDB/issues/827) |
 |                   | `$each`     | ⚠️      | [Issue](https://github.com/FerretDB/FerretDB/issues/828) |
 |                   | `$position` | ⚠️      | [Issue](https://github.com/FerretDB/FerretDB/issues/829) |
@@ -147,12 +147,12 @@ Related epic - [Issue](https://github.com/FerretDB/FerretDB/issues/78).
 
 ## Free Monitoring Commands
 
-| Command                   | Argument            | Status | Comments                                               |
-| ------------------------- | ------------------- | ------ | ------------------------------------------------------ |
-| `setFreeMonitoring`       |                     | ✅      | [Telemetry reporting](/telemetry/)                     |
-|                           | `action: "enable"`  | ✅      | [`--telemetry=enable`](/telemetry/#enable-telemetry)   |
-|                           | `action: "disable"` | ✅      | [`--telemetry=disable`](/telemetry/#disable-telemetry) |
-| `getFreeMonitoringStatus` |                     | ✅      |                                                        |
+| Command                   | Argument            | Status | Comments                                                   |
+| ------------------------- | ------------------- | ------ | ---------------------------------------------------------- |
+| `setFreeMonitoring`       |                     | ✅      | [Telemetry reporting](../telemetry.md)                     |
+|                           | `action: "enable"`  | ✅      | [`--telemetry=enable`](../telemetry.md#enable-telemetry)   |
+|                           | `action: "disable"` | ✅      | [`--telemetry=disable`](../telemetry.md#disable-telemetry) |
+| `getFreeMonitoringStatus` |                     | ✅      |                                                            |
 
 ## Database Operations
 

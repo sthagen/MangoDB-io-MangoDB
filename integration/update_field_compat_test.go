@@ -23,7 +23,9 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"github.com/FerretDB/FerretDB/integration/setup"
+	"github.com/FerretDB/FerretDB/integration/shareddata"
 	"github.com/FerretDB/FerretDB/internal/types"
+	"github.com/FerretDB/FerretDB/internal/util/must"
 )
 
 func TestUpdateFieldCompatCurrentDate(t *testing.T) {
@@ -206,7 +208,9 @@ func TestUpdateFieldCompatIncComplex(t *testing.T) {
 		},
 		"ArrayFieldValueNotExist": {
 			update: bson.D{{"$inc", bson.D{{"v.0.foo", int32(1)}}}},
-			skip:   "https://github.com/FerretDB/FerretDB/issues/1658",
+		},
+		"ArrayFieldIndexNotExist": {
+			update: bson.D{{"$inc", bson.D{{"v.5.foo", int32(1)}}}},
 		},
 		"IncOnString": {
 			update:     bson.D{{"$inc", "string"}},
@@ -621,6 +625,13 @@ func TestUpdateFieldCompatUnsetArray(t *testing.T) {
 func TestUpdateFieldCompatSet(t *testing.T) {
 	t.Parallel()
 
+	// Tigris does not update number type upon set due to schema.
+	// Hence $set is tested on the same number type for tigris using
+	// following providers.
+	int32sProvider := []shareddata.Provider{shareddata.Int32s}
+	int64sProvider := []shareddata.Provider{shareddata.Int64s}
+	doublesProvider := []shareddata.Provider{shareddata.Doubles}
+
 	testCases := map[string]updateCompatTestCase{
 		"SetNullInExisingField": {
 			update: bson.D{{"$set", bson.D{{"v", nil}}}},
@@ -663,33 +674,117 @@ func TestUpdateFieldCompatSet(t *testing.T) {
 			update:        bson.D{{"$set", bson.D{{"foo", int32(12)}, {"v", nil}}}},
 			skipForTigris: "https://github.com/FerretDB/FerretDB/issues/1676",
 		},
-		"SetSameValueInt": {
-			update: bson.D{{"$set", bson.D{{"v", int32(42)}}}},
-			skip:   "https://github.com/FerretDB/FerretDB/issues/1662",
+		"Int32Type": {
+			update:        bson.D{{"$set", bson.D{{"v", int32(42)}}}},
+			skipForTigris: "tested in Int32TypeOnly without int64 and double shareddata",
+		},
+		"Int32TypeOnly": {
+			update:    bson.D{{"$set", bson.D{{"v", int32(42)}}}},
+			providers: int32sProvider,
+		},
+		"Int64Type": {
+			update:        bson.D{{"$set", bson.D{{"v", int64(42)}}}},
+			skipForTigris: "tested in Int64TypeOnly without int32 and double shareddata",
+		},
+		"Int64TypeOnly": {
+			update:    bson.D{{"$set", bson.D{{"v", int64(42)}}}},
+			providers: int64sProvider,
+		},
+		"DoubleType": {
+			update:        bson.D{{"$set", bson.D{{"v", 42.0}}}},
+			skipForTigris: "tested in DoubleTypeOnly without int32 and int64 shareddata",
+		},
+		"DoubleTypeOnly": {
+			update:    bson.D{{"$set", bson.D{{"v", 42.0}}}},
+			providers: doublesProvider,
+		},
+		"DocSameNumberType": {
+			update: bson.D{{"$set", bson.D{{"v", bson.D{{"foo", int32(42)}}}}}},
+		},
+		"DocDifferentNumberType": {
+			update:        bson.D{{"$set", bson.D{{"v", bson.D{{"foo", int64(42)}}}}}},
+			skipForTigris: "Tigris cannot set different number type",
 		},
 		"DocFieldExist": {
 			update: bson.D{{"$set", bson.D{{"v.foo", int32(1)}}}},
-			skip:   "https://github.com/FerretDB/FerretDB/issues/1661",
 		},
 		"DocumentFieldNotExist": {
 			update:        bson.D{{"$set", bson.D{{"foo.bar", int32(1)}}}},
 			skipForTigris: "https://github.com/FerretDB/FerretDB/issues/1676",
 		},
 		"ArrayFieldExist": {
-			update: bson.D{{"$set", bson.D{{"v.array.0", int32(1)}}}},
-			skip:   "https://github.com/FerretDB/FerretDB/issues/1661",
+			update:        bson.D{{"$set", bson.D{{"v.array.0", int32(1)}}}},
+			skipForTigris: "Tigris does not support language keyword 'array' as field name",
 		},
 		"ArrayFieldNotExist": {
 			update:        bson.D{{"$set", bson.D{{"foo.0.baz", int32(1)}}}},
 			skipForTigris: "https://github.com/FerretDB/FerretDB/issues/1676",
 		},
-		"DocArrFieldNotExist": {
-			update: bson.D{{"$set", bson.D{{"v.0.foo", int32(1)}}}},
-			skip:   "https://github.com/FerretDB/FerretDB/issues/1661",
+		"DocArrFieldNotExists_0": {
+			update:        bson.D{{"$set", bson.D{{"v.0.foo", int32(1)}}}},
+			skipForTigris: "Tigris needs a special data set: https://github.com/FerretDB/FerretDB/issues/1507",
+		},
+		"DocArrFieldNotExists_1": {
+			update:        bson.D{{"$set", bson.D{{"v.1.foo", int32(1)}}}},
+			skipForTigris: "Tigris needs a special data set: https://github.com/FerretDB/FerretDB/issues/1507",
+		},
+		"DocArrFieldNotExists_2": {
+			update:        bson.D{{"$set", bson.D{{"v.2", int32(1)}}}},
+			skipForTigris: "Tigris needs a special data set: https://github.com/FerretDB/FerretDB/issues/1507",
 		},
 		"DocumentField": {
 			update:        bson.D{{"$set", bson.D{{"foo", int32(42)}, {"bar", "baz"}}}},
 			skipForTigris: "https://github.com/FerretDB/FerretDB/issues/1676",
+		},
+		"Binary": {
+			update: bson.D{{"$set", bson.D{{"v", primitive.Binary{Subtype: 0x80, Data: []byte{42, 0, 13}}}}}},
+		},
+		"BinaryGenericSubtype": {
+			update: bson.D{{"$set", bson.D{{"v", primitive.Binary{Subtype: 0x00, Data: []byte{42, 0, 13}}}}}},
+		},
+		"BinaryEmpty": {
+			update: bson.D{{"$set", bson.D{{"v", primitive.Binary{Data: []byte{}}}}}},
+		},
+		"ObjectID": {
+			update:        bson.D{{"$set", bson.D{{"v", must.NotFail(primitive.ObjectIDFromHex("000102030405060708091011"))}}}},
+			skipForTigris: "https://github.com/FerretDB/FerretDB/issues/1830",
+		},
+		"ObjectIDEmpty": {
+			update:        bson.D{{"$set", bson.D{{"v", primitive.NilObjectID}}}},
+			skipForTigris: "https://github.com/FerretDB/FerretDB/issues/1830",
+		},
+		"Bool": {
+			update: bson.D{{"$set", bson.D{{"v", true}}}},
+		},
+		"Datetime": {
+			update:        bson.D{{"$set", bson.D{{"v", primitive.NewDateTimeFromTime(time.Date(2021, 11, 1, 10, 18, 42, 123000000, time.UTC))}}}},
+			skipForTigris: "https://github.com/FerretDB/FerretDB/issues/1830",
+		},
+		"DatetimeNanoSecDiff": {
+			update:        bson.D{{"$set", bson.D{{"v", primitive.NewDateTimeFromTime(time.Date(2021, 11, 1, 10, 18, 42, 123000001, time.UTC))}}}},
+			skipForTigris: "https://github.com/FerretDB/FerretDB/issues/1830",
+		},
+		"DatetimeEpoch": {
+			update:        bson.D{{"$set", bson.D{{"v", primitive.NewDateTimeFromTime(time.Unix(0, 0))}}}},
+			skipForTigris: "https://github.com/FerretDB/FerretDB/issues/1830",
+		},
+		"Regex": {
+			update: bson.D{{"$set", bson.D{{"v", primitive.Regex{Pattern: "foo"}}}}},
+		},
+		"RegexOption": {
+			update: bson.D{{"$set", bson.D{{"v", primitive.Regex{Pattern: "foo", Options: "i"}}}}},
+		},
+		"RegexEmpty": {
+			update: bson.D{{"$set", bson.D{{"v", primitive.Regex{}}}}},
+		},
+		"Timestamp": {
+			update: bson.D{{"$set", bson.D{{"v", primitive.Timestamp{T: 41, I: 12}}}}},
+		},
+		"TimestampNoI": {
+			update: bson.D{{"$set", bson.D{{"v", primitive.Timestamp{T: 41}}}}},
+		},
+		"TimestampNoT": {
+			update: bson.D{{"$set", bson.D{{"v", primitive.Timestamp{I: 12}}}}},
 		},
 	}
 
@@ -708,11 +803,30 @@ func TestUpdateFieldCompatSetArray(t *testing.T) {
 			resultType: emptyResult,
 		},
 		"ArrayNil": {
-			update: bson.D{{"$set", bson.D{{"v", bson.A{nil}}}}},
-			skip:   "https://github.com/FerretDB/FerretDB/issues/1662",
+			update:        bson.D{{"$set", bson.D{{"v", bson.A{nil}}}}},
+			skipForTigris: "TODO: tigris produce empty result because composites dataset is not applicable",
 		},
 		"EmptyArray": {
 			update: bson.D{{"$set", bson.D{{"v", bson.A{}}}}},
+		},
+		"ArrayStringsDesc": {
+			update: bson.D{{"$set", bson.D{{"v", bson.A{"c", "b", "a"}}}}},
+		},
+		"ArrayChangedNumberType": {
+			update:        bson.D{{"$set", bson.D{{"v", bson.A{int64(42), int64(43), 45.5}}}}},
+			skipForTigris: "Tigris does not support mixed types in arrays",
+		},
+		"ArrayUnchangedNumberType": {
+			update:        bson.D{{"$set", bson.D{{"v", bson.A{int32(42), int64(43), 45.5}}}}},
+			skipForTigris: "Tigris does not support mixed types in arrays",
+		},
+		"DocSameNumberType": {
+			update:        bson.D{{"$set", bson.D{{"v", bson.D{{"foo", int32(42)}, {"42", "foo"}, {"array", bson.A{int32(42), "foo", nil}}}}}}},
+			skipForTigris: "Tigris does not support field names started from numbers (`42`)",
+		},
+		"DocDifferentNumberType": {
+			update:        bson.D{{"$set", bson.D{{"v", bson.D{{"foo", int32(42)}, {"42", "foo"}, {"array", bson.A{int64(42), "foo", nil}}}}}}},
+			skipForTigris: "Tigris does not support field names started from numbers (`42`)",
 		},
 	}
 
@@ -789,55 +903,6 @@ func TestUpdateFieldCompatSetOnInsertArray(t *testing.T) {
 	testUpdateCompat(t, testCases)
 }
 
-func TestUpdateFieldCompatPop(t *testing.T) {
-	t.Parallel()
-
-	testCases := map[string]updateCompatTestCase{
-		"DuplicateKeys": {
-			update:     bson.D{{"$pop", bson.D{{"v", 1}, {"v", 1}}}},
-			resultType: emptyResult,
-		},
-		"Pop": {
-			update:        bson.D{{"$pop", bson.D{{"v", 1}}}},
-			skipForTigris: "https://github.com/FerretDB/FerretDB/issues/1677",
-		},
-		"PopFirst": {
-			update:        bson.D{{"$pop", bson.D{{"v", -1}}}},
-			skipForTigris: "https://github.com/FerretDB/FerretDB/issues/1677",
-		},
-		"PopDotNotation": {
-			update: bson.D{{"$pop", bson.D{{"v.array", 1}}}},
-			skip:   "https://github.com/FerretDB/FerretDB/issues/1663",
-		},
-		"PopNoSuchKey": {
-			update:     bson.D{{"$pop", bson.D{{"foo", 1}}}},
-			resultType: emptyResult,
-		},
-		"PopEmptyValue": {
-			update:     bson.D{{"$pop", bson.D{}}},
-			resultType: emptyResult,
-		},
-		"PopNotValidValueString": {
-			update:     bson.D{{"$pop", bson.D{{"v", "foo"}}}},
-			resultType: emptyResult,
-		},
-		"PopNotValidValueInt": {
-			update:     bson.D{{"$pop", bson.D{{"v", int32(42)}}}},
-			resultType: emptyResult,
-		},
-		"PopLastAndFirst": {
-			update: bson.D{{"$pop", bson.D{{"v", 1}, {"v", -1}}}},
-			skip:   "https://github.com/FerretDB/FerretDB/issues/666",
-		},
-		"PopDotNotationNonArray": {
-			update: bson.D{{"$pop", bson.D{{"v.foo", 1}}}},
-			skip:   "https://github.com/FerretDB/FerretDB/issues/1663",
-		},
-	}
-
-	testUpdateCompat(t, testCases)
-}
-
 func TestUpdateFieldCompatMixed(t *testing.T) {
 	t.Parallel()
 
@@ -862,6 +927,190 @@ func TestUpdateFieldCompatMixed(t *testing.T) {
 		"UnknownOperator": {
 			filter:     bson.D{{"_id", "test"}},
 			update:     bson.D{{"$foo", bson.D{{"foo", int32(1)}}}},
+			resultType: emptyResult,
+		},
+	}
+
+	testUpdateCompat(t, testCases)
+}
+
+func TestUpdateFieldCompatMul(t *testing.T) {
+	setup.SkipForTigrisWithReason(t, "https://github.com/FerretDB/FerretDB/issues/1668")
+
+	t.Parallel()
+
+	providers := shareddata.AllProviders().
+		// BigDoubles and Scalars contain numbers that produces +INF on compat,
+		// validation error on target upon $mul operation.
+		Remove("BigDoubles", "Scalars")
+
+	testCases := map[string]updateCompatTestCase{
+		"Int32": {
+			update:    bson.D{{"$mul", bson.D{{"v", int32(42)}}}},
+			providers: providers,
+		},
+		"Int32Negative": {
+			update:    bson.D{{"$mul", bson.D{{"v", int32(-42)}}}},
+			providers: providers,
+		},
+		"Int32Min": {
+			update:    bson.D{{"$mul", bson.D{{"v", math.MinInt32}}}},
+			providers: providers,
+		},
+		"Int32Max": {
+			update:    bson.D{{"$mul", bson.D{{"v", math.MaxInt32}}}},
+			providers: providers,
+		},
+		"Int64": {
+			update:    bson.D{{"$mul", bson.D{{"v", int64(42)}}}},
+			providers: providers,
+		},
+		"Int64Negative": {
+			update:    bson.D{{"$mul", bson.D{{"v", int32(-42)}}}},
+			providers: providers,
+		},
+		"Int64Min": {
+			update:    bson.D{{"$mul", bson.D{{"v", math.MinInt64}}}},
+			providers: providers,
+		},
+		"Int64Max": {
+			update:    bson.D{{"$mul", bson.D{{"v", math.MaxInt64}}}},
+			providers: providers,
+		},
+		"Double": {
+			update:    bson.D{{"$mul", bson.D{{"v", 42.13}}}},
+			providers: providers,
+		},
+		"DoubleNegative": {
+			update:    bson.D{{"$mul", bson.D{{"v", int32(-42)}}}},
+			providers: providers,
+		},
+		"DoubleSmallestNonZero": {
+			update:    bson.D{{"$mul", bson.D{{"v", math.SmallestNonzeroFloat64}}}},
+			providers: providers,
+		},
+		"DoubleBig": {
+			update:    bson.D{{"$mul", bson.D{{"v", float64(2 << 60)}}}},
+			providers: providers,
+		},
+		"Empty": {
+			update:     bson.D{{"$mul", bson.D{}}},
+			resultType: emptyResult,
+		},
+		"Null": {
+			update:     bson.D{{"$mul", bson.D{{"v", nil}}}},
+			resultType: emptyResult,
+		},
+		"String": {
+			update:     bson.D{{"$mul", bson.D{{"v", "string"}}}},
+			resultType: emptyResult,
+		},
+		"MissingField": {
+			update:     bson.D{{"$mul", "invalid"}},
+			resultType: emptyResult,
+		},
+		"StringFieldNotExist": {
+			update:     bson.D{{"$mul", bson.D{{"foo.bar", "bad value"}}}},
+			resultType: emptyResult,
+		},
+		"FieldNotExist": {
+			update: bson.D{{"$mul", bson.D{{"foo", int32(45)}}}},
+		},
+		"DocFieldExist": {
+			update: bson.D{{"$mul", bson.D{{"v.foo", int32(45)}}}},
+		},
+		"DocFieldNotExist": {
+			update: bson.D{{"$mul", bson.D{{"foo.bar", int32(45)}}}},
+		},
+		"ArrayFieldExist": {
+			update: bson.D{{"$mul", bson.D{{"v.array.0", int32(45)}}}},
+		},
+		"ArrayFieldNotExist": {
+			update: bson.D{{"$mul", bson.D{{"v.array.foo", int32(45)}}}},
+		},
+		"DocArrayFieldNotExist": {
+			update: bson.D{{"$mul", bson.D{{"foo.0.baz", int32(45)}}}},
+		},
+		"TwoFields": {
+			update: bson.D{{"$mul", bson.D{{"foo", int32(12)}, {"v", int32(1)}}}},
+		},
+		"DuplicateKeys": {
+			update:     bson.D{{"$mul", bson.D{{"v", int32(42)}, {"v", int32(43)}}}},
+			resultType: emptyResult,
+		},
+		"InvalidLastField": {
+			update:     bson.D{{"$mul", bson.D{{"foo", int32(12)}, {"v", "string"}}}},
+			resultType: emptyResult,
+		},
+		"MultipleOperator": {
+			update: bson.D{
+				{"$set", bson.D{{"foo", int32(43)}}},
+				{"$mul", bson.D{{"v", int32(42)}}},
+			},
+			providers: providers,
+		},
+		"ConflictPop": {
+			update: bson.D{
+				{"$mul", bson.D{{"v", int32(42)}}},
+				{"$pop", bson.D{{"v", -1}}},
+			},
+			providers:  providers,
+			resultType: emptyResult,
+		},
+		"ConflictSet": {
+			update: bson.D{
+				{"$mul", bson.D{{"v", int32(42)}}},
+				{"$set", bson.D{{"v", int32(43)}}},
+			},
+			providers:  providers,
+			resultType: emptyResult,
+		},
+		"ConflictInc": {
+			update: bson.D{
+				{"$mul", bson.D{{"v", int32(42)}}},
+				{"$inc", bson.D{{"v", int32(43)}}},
+			},
+			providers:  providers,
+			resultType: emptyResult,
+		},
+		"ConflictMin": {
+			update: bson.D{
+				{"$mul", bson.D{{"v", int32(42)}}},
+				{"$min", bson.D{{"v", int32(30)}}},
+			},
+			providers:  providers,
+			resultType: emptyResult,
+		},
+		"ConflictMax": {
+			update: bson.D{
+				{"$max", bson.D{{"v", int32(30)}}},
+				{"$mul", bson.D{{"v", int32(42)}}},
+			},
+			providers:  providers,
+			resultType: emptyResult,
+		},
+		"ConflictSetOnInsert": {
+			update: bson.D{
+				{"$mul", bson.D{{"v", int32(42)}}},
+				{"$setOnInsert", 43.13},
+			},
+			providers:  providers,
+			resultType: emptyResult,
+		},
+		"ConflictUnset": {
+			update: bson.D{
+				{"$mul", bson.D{{"v", int32(42)}}},
+				{"$unset", bson.D{{"v", ""}}},
+			},
+			providers:  providers,
+			resultType: emptyResult,
+		},
+		"ConflictCurrentDate": {
+			update: bson.D{
+				{"$mul", bson.D{{"v", int32(42)}}},
+				{"$currentDate", bson.D{{"v", bson.D{{"$type", "date"}}}}},
+			},
+			providers:  providers,
 			resultType: emptyResult,
 		},
 	}

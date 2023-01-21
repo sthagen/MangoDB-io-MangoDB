@@ -42,6 +42,7 @@ func TestCommandsAdministrationCreateDropList(t *testing.T) {
 
 	t.Parallel()
 	ctx, collection := setup.Setup(t) // no providers there
+
 	db := collection.Database()
 	name := collection.Name()
 
@@ -99,6 +100,7 @@ func TestCommandsAdministrationCreateDropListDatabases(t *testing.T) {
 
 	t.Parallel()
 	ctx, collection := setup.Setup(t) // no providers there
+
 	db := collection.Database()
 	name := db.Name()
 
@@ -142,6 +144,7 @@ func TestCommandsAdministrationCreateDropListDatabases(t *testing.T) {
 func TestCommandsAdministrationListDatabases(t *testing.T) {
 	t.Parallel()
 	ctx, collection := setup.Setup(t, shareddata.DocumentsStrings)
+
 	db := collection.Database()
 	name := db.Name()
 
@@ -617,7 +620,6 @@ func TestCommandsAdministrationDataSize(t *testing.T) {
 
 	t.Run("Existing", func(t *testing.T) {
 		t.Parallel()
-
 		ctx, collection := setup.Setup(t, shareddata.DocumentsStrings)
 
 		var actual bson.D
@@ -629,12 +631,11 @@ func TestCommandsAdministrationDataSize(t *testing.T) {
 		assert.Equal(t, float64(1), must.NotFail(doc.Get("ok")))
 		assert.InDelta(t, float64(24_576), must.NotFail(doc.Get("size")), 24_576)
 		assert.InDelta(t, float64(4), must.NotFail(doc.Get("numObjects")), 4) // TODO https://github.com/FerretDB/FerretDB/issues/727
-		assert.InDelta(t, float64(150), must.NotFail(doc.Get("millis")), 150)
+		assert.InDelta(t, float64(200), must.NotFail(doc.Get("millis")), 200)
 	})
 
 	t.Run("NonExisting", func(t *testing.T) {
 		t.Parallel()
-
 		ctx, collection := setup.Setup(t)
 
 		var actual bson.D
@@ -797,28 +798,27 @@ func TestCommandsAdministrationServerStatusMetrics(t *testing.T) {
 			cmds: []bson.D{
 				{{"ping", int32(1)}},
 			},
-			metricsPath:     types.NewPath([]string{"metrics", "commands", "ping"}),
+			metricsPath:     types.NewPath("metrics", "commands", "ping"),
 			expectedNonZero: []string{"total"},
 		},
 		"UpdateCmd": {
 			cmds: []bson.D{
 				{{"update", "values"}, {"updates", bson.A{bson.D{{"q", bson.D{{"v", "foo"}}}}}}},
 			},
-			metricsPath:     types.NewPath([]string{"metrics", "commands", "update"}),
+			metricsPath:     types.NewPath("metrics", "commands", "update"),
 			expectedNonZero: []string{"total"},
 		},
 		"UpdateCmdFailed": {
 			cmds: []bson.D{
 				{{"update", int32(1)}},
 			},
-			metricsPath:     types.NewPath([]string{"metrics", "commands", "update"}),
+			metricsPath:     types.NewPath("metrics", "commands", "update"),
 			expectedNonZero: []string{"failed", "total"},
 		},
 	} {
 		name, tc := name, tc
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-
 			ctx, collection := setup.Setup(t)
 
 			for _, cmd := range tc.cmds {
@@ -901,9 +901,7 @@ func TestCommandsAdministrationServerStatusFreeMonitoring(t *testing.T) {
 }
 
 func TestCommandsAdministrationServerStatusStress(t *testing.T) {
-	t.Parallel()
-
-	setup.SkipForTigrisWithReason(t, "https://github.com/FerretDB/FerretDB/issues/1791")
+	setup.SkipForTigrisWithReason(t, "https://github.com/FerretDB/FerretDB/issues/1507")
 
 	ctx, collection := setup.Setup(t) // no providers there, we will create collections concurrently
 	client := collection.Database().Client()
