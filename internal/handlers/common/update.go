@@ -141,10 +141,7 @@ func UpdateDocument(doc, update *types.Document) (bool, error) {
 				}
 			}
 
-			setDocKeys := setDoc.Keys()
-			sort.Strings(setDocKeys)
-
-			for _, setKey := range setDocKeys {
+			for _, setKey := range setDoc.Keys() {
 				setValue := must.NotFail(setDoc.Get(setKey))
 				doc.Set(setKey, setValue)
 			}
@@ -841,6 +838,8 @@ func validateRenameExpression(update *types.Document) error {
 	}
 
 	iter := doc.Iterator()
+	defer iter.Close()
+
 	keys := map[string]struct{}{}
 
 	for {
