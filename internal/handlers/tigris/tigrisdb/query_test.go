@@ -238,7 +238,6 @@ func TestBuildFilter(t *testing.T) {
 		"EmptyString": {
 			filter:   must.NotFail(types.NewDocument("v", "")),
 			expected: `{"v":""}`,
-			skip:     "https://github.com/FerretDB/FerretDB/issues/1940",
 		},
 		"Int32": {
 			filter:   must.NotFail(types.NewDocument("v", int32(42))),
@@ -275,12 +274,10 @@ func TestBuildFilter(t *testing.T) {
 			expected: `{"_id":"foo"}`,
 		},
 		"IDDotNotation": {
-			filter:   must.NotFail(types.NewDocument("_id.doc", "foo")),
-			expected: `{"_id.doc":"foo"}`,
+			filter: must.NotFail(types.NewDocument("_id.doc", "foo")),
 		},
 		"DotNotation": {
-			filter:   must.NotFail(types.NewDocument("v.doc", "foo")),
-			expected: `{"v.doc":"foo"}`,
+			filter: must.NotFail(types.NewDocument("v.doc", "foo")),
 		},
 		"DotNotationArrayIndex": {
 			filter: must.NotFail(types.NewDocument("v.arr.0", "foo")),
