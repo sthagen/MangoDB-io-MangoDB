@@ -27,6 +27,7 @@ tasks:
         -tags=ferretdb_testenvdata,ferretdb_tigris .
         -target-backend=ferretdb-tigris
         -tigris-urls=127.0.0.1:8081
+      # no hana yet
       - >
         go test -count=1 {{.RACEFLAG}} -run=TestEnvData
         -tags=ferretdb_testenvdata .
@@ -44,10 +45,6 @@ tasks:
       - ../bin/go-consistent{{exeExt}} -pedantic ./...
       - ../bin/go-sumtype{{exeExt}} ./...
       - go vet -vettool=../bin/checkswitch{{exeExt}} ./...
-    sources:
-      - "**/*.go"
-      - "../**/go.mod"
-      - "../**/*.yml"
 
   integration-security:
     cmds:
