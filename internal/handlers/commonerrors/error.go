@@ -41,6 +41,9 @@ const (
 	// ErrFailedToParse indicates user input parsing failure.
 	ErrFailedToParse = ErrorCode(9) // FailedToParse
 
+	// ErrUnauthorized indicates that cursor is not authorized to access another namespace.
+	ErrUnauthorized = ErrorCode(13) // Unauthorized
+
 	// ErrTypeMismatch for $sort indicates that the expression in the $sort is not an object.
 	ErrTypeMismatch = ErrorCode(14) // TypeMismatch
 
@@ -189,6 +192,12 @@ const (
 	// ErrStageUnwindNoPrefix indicates that $unwind aggregation stage doesn't include '$' prefix.
 	ErrStageUnwindNoPrefix = ErrorCode(28818) // Location28818
 
+	// ErrUnsetPathCollision indicates that an $unset path creates collision at another path in arguments.
+	ErrUnsetPathCollision = ErrorCode(31249) // Location31249
+
+	// ErrUnsetPathOverwrite indicates that an $unset path have overwrites another path in arguments.
+	ErrUnsetPathOverwrite = ErrorCode(31250) // Location31250
+
 	// ErrProjectionInEx for $elemMatch indicates that inclusion statement found
 	// while projection document already marked as exclusion.
 	ErrProjectionInEx = ErrorCode(31253) // Location31253
@@ -221,6 +230,10 @@ const (
 
 	// ErrStageCountBadValue indicates that $count stage contains invalid value.
 	ErrStageCountBadValue = ErrorCode(40160) // Location40160
+
+	// ErrAddFieldsExpressionWrongAmountOfArgs indicates that $addFields stage expression contain invalid
+	// amount of arguments.
+	ErrAddFieldsExpressionWrongAmountOfArgs = ErrorCode(40181) // Location40181
 
 	// ErrStageGroupUnaryOperator indicates that $sum is a unary operator.
 	ErrStageGroupUnaryOperator = ErrorCode(40237) // Location40237
