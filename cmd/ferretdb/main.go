@@ -81,7 +81,6 @@ var cli struct {
 		RecordsDir            string `default:"" help:"Experimental: directory for record files."`
 		DisableFilterPushdown bool   `default:"false" help:"Experimental: disable filter pushdown."`
 		EnableSortPushdown    bool   `default:"false" help:"Experimental: enable sort pushdown."`
-		EnableCursors         bool   `default:"false" help:"Experimental: enable cursors."`
 
 		//nolint:lll // for readability
 		Telemetry struct {
@@ -204,17 +203,17 @@ func setupState() *state.Provider {
 
 // setupMetrics setups Prometheus metrics registerer with some metrics.
 func setupMetrics(stateProvider *state.Provider) prometheus.Registerer {
-	r := prometheus.WrapRegistererWith(
-		prometheus.Labels{"uuid": stateProvider.Get().UUID},
-		prometheus.DefaultRegisterer,
-	)
-	m := stateProvider.MetricsCollector(false)
+	r := prometheus.DefaultRegisterer
+	m := stateProvider.MetricsCollector(true)
 
-	// Unless requested, don't add UUID to all metrics, but add it to one.
-	// See https://prometheus.io/docs/instrumenting/writing_exporters/#target-labels-not-static-scraped-labels
-	if !cli.MetricsUUID {
-		r = prometheus.DefaultRegisterer
-		m = stateProvider.MetricsCollector(true)
+	// we don't do it by default due to
+	// https://prometheus.io/docs/instrumenting/writing_exporters/#target-labels-not-static-scraped-labels
+	if cli.MetricsUUID {
+		r = prometheus.WrapRegistererWith(
+			prometheus.Labels{"uuid": stateProvider.Get().UUID},
+			prometheus.DefaultRegisterer,
+		)
+		m = stateProvider.MetricsCollector(false)
 	}
 
 	r.MustRegister(m)
@@ -356,7 +355,7 @@ func run() {
 
 	h, err := registry.NewHandler(cli.Handler, &registry.NewHandlerOpts{
 		Logger:        logger,
-		Metrics:       metrics.ConnMetrics,
+		ConnMetrics:   metrics.ConnMetrics,
 		StateProvider: stateProvider,
 
 		PostgreSQLURL: pgFlags.PostgreSQLURL,
@@ -372,13 +371,11 @@ func run() {
 		TestOpts: registry.TestOpts{
 			DisableFilterPushdown: cli.Test.DisableFilterPushdown,
 			EnableSortPushdown:    cli.Test.EnableSortPushdown,
-			EnableCursors:         cli.Test.EnableCursors,
 		},
 	})
 	if err != nil {
 		logger.Fatal(err.Error())
 	}
-	defer h.Close()
 
 	l := clientconn.NewListener(&clientconn.NewListenerOpts{
 		TCP:         cli.Listen.Addr,

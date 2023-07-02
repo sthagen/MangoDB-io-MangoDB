@@ -38,7 +38,7 @@ var registry = map[string]newHandlerFunc{}
 type NewHandlerOpts struct {
 	// for all handlers
 	Logger        *zap.Logger
-	Metrics       *connmetrics.ConnMetrics
+	ConnMetrics   *connmetrics.ConnMetrics
 	StateProvider *state.Provider
 
 	// for `pg` handler
@@ -62,7 +62,6 @@ type NewHandlerOpts struct {
 type TestOpts struct {
 	DisableFilterPushdown bool
 	EnableSortPushdown    bool
-	EnableCursors         bool
 }
 
 // NewHandler constructs a new handler.

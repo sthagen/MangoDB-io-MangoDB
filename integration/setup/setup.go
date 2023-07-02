@@ -19,6 +19,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/url"
 	"path/filepath"
 	"runtime/trace"
 	"strings"
@@ -61,7 +62,6 @@ var (
 
 	disableFilterPushdownF = flag.Bool("disable-filter-pushdown", false, "disable filter pushdown")
 	enableSortPushdownF    = flag.Bool("enable-sort-pushdown", false, "enable sort pushdown")
-	enableCursorsF         = flag.Bool("enable-cursors", false, "enable cursors")
 )
 
 // Other globals.
@@ -87,6 +87,9 @@ type SetupOpts struct {
 
 	// Benchmark data provider. If empty, collection is not created.
 	BenchmarkProvider shareddata.BenchmarkProvider
+
+	// ExtraOptions sets the options in MongoDB URI, when the option exists it overwrites that option.
+	ExtraOptions url.Values
 }
 
 // SetupResult represents setup results.
@@ -133,20 +136,34 @@ func SetupWithOpts(tb testing.TB, opts *SetupOpts) *SetupResult {
 	}
 	logger := testutil.LevelLogger(tb, level)
 
-	var client *mongo.Client
-	var uri string
-
-	if *targetURLF == "" {
-		client, uri = setupListener(tb, ctx, logger)
-	} else {
-		client = setupClient(tb, ctx, *targetURLF)
-		uri = *targetURLF
+	uri := *targetURLF
+	if uri == "" {
+		uri = setupListener(tb, setupCtx, logger)
 	}
+
+	if opts.ExtraOptions != nil {
+		u, err := url.Parse(uri)
+		require.NoError(tb, err)
+
+		q := u.Query()
+
+		for k, vs := range opts.ExtraOptions {
+			for _, v := range vs {
+				q.Set(k, v)
+			}
+		}
+
+		u.RawQuery = q.Encode()
+		uri = u.String()
+		tb.Logf("URI with extra options: %s", uri)
+	}
+
+	client := setupClient(tb, setupCtx, uri)
 
 	// register cleanup function after setupListener registers its own to preserve full logs
 	tb.Cleanup(cancel)
 
-	collection := setupCollection(tb, ctx, client, opts)
+	collection := setupCollection(tb, setupCtx, client, opts)
 
 	level.SetLevel(*logLevelF)
 

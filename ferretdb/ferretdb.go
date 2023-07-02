@@ -122,7 +122,7 @@ func New(config *Config) (*FerretDB, error) {
 
 	h, err := registry.NewHandler(config.Handler, &registry.NewHandlerOpts{
 		Logger:        logger,
-		Metrics:       metrics.ConnMetrics,
+		ConnMetrics:   metrics.ConnMetrics,
 		StateProvider: p,
 
 		PostgreSQLURL: config.PostgreSQLURL,
@@ -159,10 +159,8 @@ func New(config *Config) (*FerretDB, error) {
 
 // Run runs FerretDB until ctx is canceled.
 //
-// When this method returns, listener and all connections are closed.
+// When this method returns, listener and all connections, as well as handler are closed.
 func (f *FerretDB) Run(ctx context.Context) error {
-	defer f.l.Handler.Close()
-
 	err := f.l.Run(ctx)
 	if errors.Is(err, context.Canceled) {
 		err = nil
@@ -186,9 +184,9 @@ func (f *FerretDB) MongoDBURI() string {
 
 	switch {
 	case f.config.Listener.TLS != "":
-		q := make(url.Values)
-
-		q.Set("tls", "true")
+		q := url.Values{
+			"tls": []string{"true"},
+		}
 
 		u = &url.URL{
 			Scheme:   "mongodb",

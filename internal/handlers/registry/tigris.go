@@ -34,11 +34,10 @@ func init() {
 			},
 
 			L:             opts.Logger,
-			Metrics:       opts.Metrics,
+			ConnMetrics:   opts.ConnMetrics,
 			StateProvider: opts.StateProvider,
 
 			DisableFilterPushdown: opts.DisableFilterPushdown,
-			EnableCursors:         opts.EnableCursors,
 		}
 
 		return tigris.New(handlerOpts)

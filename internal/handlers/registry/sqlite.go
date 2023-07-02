@@ -27,8 +27,8 @@ func init() {
 		handlerOpts := &sqlite.NewOpts{
 			Dir: opts.SQLiteURI,
 
-			L:             opts.Logger,
-			Metrics:       opts.Metrics,
+			L:             opts.Logger.Named("sqlite"),
+			ConnMetrics:   opts.ConnMetrics,
 			StateProvider: opts.StateProvider,
 
 			DisableFilterPushdown: opts.DisableFilterPushdown,

@@ -197,9 +197,8 @@ tasks:
         -coverprofile=integration-pg.txt .
         -target-backend=ferretdb-pg
         -target-tls
-        -postgresql-url=postgres://username@127.0.0.1:5432/ferretdb
+        -postgresql-url=postgres://username@127.0.0.1:5432/ferretdb?pool_max_conns=50
         -compat-url='mongodb://username:password@127.0.0.1:47018/?tls=true&tlsCertificateKeyFile=../build/certs/client.pem&tlsCaFile=../build/certs/rootCA-cert.pem'
-        -enable-cursors
     vars:
       SHARD_RUN:
         sh: go run -C .. ./cmd/envtool tests shard --index={{.SHARD_INDEX}} --total={{.SHARD_TOTAL}}
@@ -309,7 +308,7 @@ tasks:
         --proxy-addr=127.0.0.1:47017
         --mode=diff-normal
         --handler=pg
-        --postgresql-url=postgres://username@127.0.0.1:5432/ferretdb
+        --postgresql-url=postgres://username@127.0.0.1:5432/ferretdb?pool_max_conns=50
         --test-records-dir=tmp/records
 
   run-sqlite:
@@ -367,7 +366,7 @@ tasks:
         --proxy-addr=127.0.0.1:47017
         --mode=diff-normal
         --handler=pg
-        --postgresql-url=postgres://127.0.0.1:5433/ferretdb
+        --postgresql-url=postgres://127.0.0.1:5433/ferretdb?pool_max_conns=50
         --test-records-dir=tmp/records
 
   # set FERRETDB_TIGRIS_CLIENT_ID and FERRETDB_TIGRIS_CLIENT_SECRET environment variables to use it
@@ -398,8 +397,23 @@ tasks:
         --proxy-addr=127.0.0.1:47017
         --mode=diff-proxy
         --handler=pg
-        --postgresql-url=postgres://username@127.0.0.1:5432/ferretdb
+        --postgresql-url=postgres://username@127.0.0.1:5432/ferretdb?pool_max_conns=50
         --test-records-dir=tmp/records
+
+  run-sqlite-proxy:
+    desc: "Run FerretDB with `sqlite` handler in diff-proxy mode"
+    deps: [build-host]
+    cmds:
+      - go run ./cmd/envtool shell mkdir tmp/sqlite
+      - >
+        bin/ferretdb{{exeExt}} -test.coverprofile=cover.txt --
+        --listen-addr=:27017
+        --proxy-addr=127.0.0.1:47017
+        --mode=diff-proxy
+        --handler=sqlite
+        --sqlite-uri=tmp/sqlite
+        --test-records-dir=tmp/records
+        --test-disable-filter-pushdown
 
   lint:
     desc: "Run linters"
