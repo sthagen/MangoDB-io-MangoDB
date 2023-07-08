@@ -28,6 +28,7 @@ import (
 
 	"github.com/FerretDB/FerretDB/internal/types"
 	"github.com/FerretDB/FerretDB/internal/util/must"
+	"github.com/FerretDB/FerretDB/internal/util/testutil"
 	"github.com/FerretDB/FerretDB/internal/wire"
 )
 
@@ -41,7 +42,7 @@ type testCase struct {
 }
 
 // assertEqual is assert.Equal that also can compare NaNs and ±0.
-func assertEqual(tb testing.TB, expected, actual any, msgAndArgs ...any) bool {
+func assertEqual(tb testutil.TB, expected, actual any, msgAndArgs ...any) bool {
 	tb.Helper()
 
 	switch expected := expected.(type) {
@@ -169,6 +170,10 @@ func fuzzJSON(f *testing.F, testCases []testCase, newFunc func() sjsontype) {
 		var n int
 
 		for _, rec := range records {
+			if rec.Body == nil {
+				continue
+			}
+
 			var docs []*types.Document
 
 			switch b := rec.Body.(type) {
