@@ -39,6 +39,9 @@ type Database interface {
 	ListCollections(context.Context, *ListCollectionsParams) (*ListCollectionsResult, error)
 	CreateCollection(context.Context, *CreateCollectionParams) error
 	DropCollection(context.Context, *DropCollectionParams) error
+	RenameCollection(context.Context, *RenameCollectionParams) error
+
+	Stats(context.Context, *DatabaseStatsParams) (*DatabaseStatsResult, error)
 }
 
 // databaseContract implements Database interface.
@@ -153,6 +156,61 @@ func (dbc *databaseContract) DropCollection(ctx context.Context, params *DropCol
 	checkError(err, ErrorCodeCollectionNameIsInvalid, ErrorCodeCollectionDoesNotExist) // TODO: ErrorCodeDatabaseDoesNotExist ?
 
 	return err
+}
+
+// RenameCollectionParams represents the parameters of Database.RenameCollection method.
+type RenameCollectionParams struct {
+	OldName string
+	NewName string
+}
+
+// RenameCollection renames existing collection in the database.
+// Both old and new names should be valid.
+//
+// The errors for non-existing database and non-existing collection are the same (TODO?).
+func (dbc *databaseContract) RenameCollection(ctx context.Context, params *RenameCollectionParams) error {
+	defer observability.FuncCall(ctx)()
+
+	err := validateCollectionName(params.OldName)
+
+	if err == nil {
+		err = validateCollectionName(params.NewName)
+	}
+
+	if err == nil {
+		err = dbc.db.RenameCollection(ctx, params)
+	}
+
+	checkError(err, ErrorCodeCollectionNameIsInvalid, ErrorCodeCollectionDoesNotExist) // TODO: ErrorCodeDatabaseDoesNotExist ?
+
+	return err
+}
+
+// DatabaseStatsParams represents the parameters of Database.Stats method.
+type DatabaseStatsParams struct{}
+
+// DatabaseStatsResult represents the results of Database.Stats method.
+//
+// TODO https://github.com/FerretDB/FerretDB/issues/2447
+type DatabaseStatsResult struct {
+	CountCollections int64
+	CountObjects     int64
+	CountIndexes     int64
+	SizeTotal        int64
+	SizeIndexes      int64
+	SizeCollections  int64
+}
+
+// Stats returns statistics about the database.
+//
+// Database may not exist; that's not an error, it returns *backends.DatabaseStatsResult filled with zeros for all the fields.
+func (dbc *databaseContract) Stats(ctx context.Context, params *DatabaseStatsParams) (*DatabaseStatsResult, error) {
+	defer observability.FuncCall(ctx)()
+
+	res, err := dbc.db.Stats(ctx, params)
+	checkError(err)
+
+	return res, err
 }
 
 // check interfaces

@@ -12,10 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package sqlite
+// Package testdata provides vet tool test data.
+package testdata
 
-import "testing"
+func testCorrect() {
+	// TODO https://github.com/FerretDB/FerretDB/issues/2733
+}
 
-func TestDummy(t *testing.T) {
-	// we need at least one test per package to correctly calculate coverage
+func testCorrectForNow() {
+	// TODO no URL
+}
+
+func testIncorrect() {
+	// TODO: https://github.com/FerretDB/FerretDB/issues/2733 // want "invalid TODO comment"
 }
