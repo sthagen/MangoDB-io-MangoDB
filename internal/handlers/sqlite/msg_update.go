@@ -82,7 +82,6 @@ func (h *Handler) updateDocument(ctx context.Context, params *common.UpdateParam
 
 		return 0, 0, nil, lazyerrors.Error(err)
 	}
-	defer db.Close()
 
 	err = db.CreateCollection(ctx, &backends.CreateCollectionParams{Name: params.Collection})
 
@@ -109,7 +108,12 @@ func (h *Handler) updateDocument(ctx context.Context, params *common.UpdateParam
 			return 0, 0, nil, lazyerrors.Error(err)
 		}
 
-		res, err := c.Query(ctx, nil)
+		var qp backends.QueryParams
+		if !h.DisableFilterPushdown {
+			qp.Filter = u.Filter
+		}
+
+		res, err := c.Query(ctx, &qp)
 		if err != nil {
 			return 0, 0, nil, lazyerrors.Error(err)
 		}

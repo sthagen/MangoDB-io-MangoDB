@@ -60,9 +60,13 @@ func (h *Handler) MsgDBStats(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg,
 
 		return nil, lazyerrors.Error(err)
 	}
-	defer db.Close()
 
 	stats, err := db.Stats(ctx, new(backends.DatabaseStatsParams))
+	if backends.ErrorCodeIs(err, backends.ErrorCodeDatabaseDoesNotExist) {
+		stats = new(backends.DatabaseStatsResult)
+		err = nil
+	}
+
 	if err != nil {
 		return nil, lazyerrors.Error(err)
 	}
