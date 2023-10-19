@@ -380,7 +380,7 @@ func (c *collection) Stats(ctx context.Context, params *backends.CollectionStats
 		)
 	}
 
-	stats, err := collectionsStats(ctx, p, c.dbName, []*metadata.Collection{coll})
+	stats, err := collectionsStats(ctx, p, c.dbName, []*metadata.Collection{coll}, params.Refresh)
 	if err != nil {
 		return nil, lazyerrors.Error(err)
 	}
@@ -434,11 +434,12 @@ func (c *collection) Stats(ctx context.Context, params *backends.CollectionStats
 	}
 
 	return &backends.CollectionStatsResult{
-		CountDocuments: stats.countDocuments,
-		SizeTotal:      stats.sizeTables + stats.sizeIndexes,
-		SizeIndexes:    stats.sizeIndexes,
-		SizeCollection: stats.sizeTables,
-		IndexSizes:     indexSizes,
+		CountDocuments:  stats.countDocuments,
+		SizeTotal:       stats.sizeTables + stats.sizeIndexes,
+		SizeIndexes:     stats.sizeIndexes,
+		SizeCollection:  stats.sizeTables,
+		SizeFreeStorage: stats.sizeFreeStorage,
+		IndexSizes:      indexSizes,
 	}, nil
 }
 

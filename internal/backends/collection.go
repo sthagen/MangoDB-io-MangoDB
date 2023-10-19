@@ -235,16 +235,17 @@ func (cc *collectionContract) Explain(ctx context.Context, params *ExplainParams
 
 // CollectionStatsParams represents the parameters of Collection.Stats method.
 type CollectionStatsParams struct {
-	Refresh bool // TODO https://github.com/FerretDB/FerretDB/issues/3518
+	Refresh bool
 }
 
 // CollectionStatsResult represents the results of Collection.Stats method.
 type CollectionStatsResult struct {
-	CountDocuments int64
-	SizeTotal      int64
-	SizeIndexes    int64
-	SizeCollection int64
-	IndexSizes     []IndexSize
+	CountDocuments  int64
+	SizeTotal       int64
+	SizeIndexes     int64
+	SizeCollection  int64
+	SizeFreeStorage int64
+	IndexSizes      []IndexSize
 }
 
 // IndexSize represents the name and the size of an index.
