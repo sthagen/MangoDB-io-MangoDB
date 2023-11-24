@@ -16,13 +16,12 @@ package registry
 
 import (
 	"github.com/FerretDB/FerretDB/internal/backends/mysql"
-	"github.com/FerretDB/FerretDB/internal/handlers"
 	handler "github.com/FerretDB/FerretDB/internal/handlers/sqlite"
 )
 
 // init registers "mysql" handler.
 func init() {
-	registry["mysql"] = func(opts *NewHandlerOpts) (handlers.Interface, CloseBackendFunc, error) {
+	registry["mysql"] = func(opts *NewHandlerOpts) (*handler.Handler, CloseBackendFunc, error) {
 		b, err := mysql.NewBackend(&mysql.NewBackendParams{
 			URI: opts.MySQLURL,
 			L:   opts.Logger.Named("mysql"),
@@ -39,9 +38,8 @@ func init() {
 			ConnMetrics:   opts.ConnMetrics,
 			StateProvider: opts.StateProvider,
 
-			DisableFilterPushdown:    opts.DisableFilterPushdown,
-			EnableUnsafeSortPushdown: opts.EnableUnsafeSortPushdown,
-			EnableOplog:              opts.EnableOplog,
+			DisableFilterPushdown: opts.DisableFilterPushdown,
+			EnableOplog:           opts.EnableOplog,
 		}
 
 		h, err := handler.New(handlerOpts)
