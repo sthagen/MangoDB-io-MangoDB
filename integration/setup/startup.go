@@ -51,7 +51,7 @@ func Startup() {
 		RemoveTime:  true,
 		RemoveLevel: true,
 	}
-	logging.SetupSlog(opts, "")
+	logging.Setup(opts, "")
 	l := slog.Default()
 
 	ctx := context.Background()
@@ -74,10 +74,10 @@ func Startup() {
 		l.LogAttrs(ctx, logging.LevelFatal, "Failed to create debug handler", logging.Error(err))
 	}
 
-	ot, err := observability.NewOtelTracer(&observability.OtelTracerOpts{
-		Logger:   logging.WithName(l, "otel"),
-		Service:  "integration-tests",
-		Endpoint: "127.0.0.1:4318",
+	ot, err := observability.NewOTelTraceExporter(&observability.OTelTraceExporterOpts{
+		Logger:  logging.WithName(l, "otel"),
+		Service: "integration-tests",
+		URL:     "http://127.0.0.1:4318/v1/traces",
 	})
 	if err != nil {
 		l.LogAttrs(ctx, logging.LevelFatal, "Failed to create Otel tracer", logging.Error(err))
